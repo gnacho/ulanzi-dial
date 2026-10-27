@@ -117,7 +117,6 @@ pub fn build_ui(app: &adw::Application) {
     device::spawn_reader(
         ReaderConfig {
             keymap: config.keymap(),
-            long_press_ms: config.long_press_ms,
             exclusive_grab: config.exclusive_grab,
         },
         tx,
@@ -262,15 +261,8 @@ fn handle_event(
     let cfg = shared.config.borrow();
 
     match ev {
-        DialEvent::Rotate { steps, modifier } => {
-            let action = match modifier {
-                Some(btn) => cfg
-                    .buttons
-                    .get(&btn)
-                    .map(|b| b.spin.clone())
-                    .unwrap_or(Action::None),
-                None => cfg.dial_rotate.clone(),
-            };
+        DialEvent::Rotate { steps } => {
+            let action = cfg.dial_rotate.clone();
             let detents = if cfg.invert { -steps } else { steps };
             // La sensibilidad solo tiene sentido en las acciones continuas:
             // aplicada al volumen multiplicaba cada muesca por cinco.
@@ -315,23 +307,13 @@ fn handle_event(
                 shared.hud_value.set(v);
                 hud.show(&action.label(), v);
             }
-            let hl = match modifier {
-                Some(b) => Highlight::Button(b),
-                None => Highlight::DialRotate,
-            };
-            device.borrow().map.highlight(hl);
+            device.borrow().map.highlight(Highlight::DialRotate);
         }
         DialEvent::DialPress => {
             let action = cfg.dial_press.clone();
             drop(cfg);
             shared.with_executor(|exec| exec.press(&action));
             device.borrow().map.highlight(Highlight::DialPress);
-        }
-        DialEvent::DialLongPress => {
-            let action = cfg.dial_long_press.clone();
-            drop(cfg);
-            shared.with_executor(|exec| exec.press(&action));
-            device.borrow().map.highlight(Highlight::DialLong);
         }
         DialEvent::ButtonPress(id) => {
             let action = cfg

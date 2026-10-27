@@ -60,23 +60,6 @@ pub fn build(config: Rc<RefCell<Config>>, on_toast: impl Fn(String) + 'static) -
     }
     grp_dial.add(&invert);
 
-    let long_press = adw::SpinRow::new(
-        Some(&gtk::Adjustment::new(750.0, 400.0, 1500.0, 50.0, 0.0, 0.0)),
-        50.0,
-        0,
-    );
-    long_press.set_title("Umbral de pulsación larga");
-    long_press.set_subtitle("Milisegundos manteniendo la rueda");
-    long_press.set_value(config.borrow().long_press_ms as f64);
-    {
-        let config = config.clone();
-        long_press.adjustment().connect_value_changed(move |adj| {
-            let mut c = config.borrow_mut();
-            c.long_press_ms = adj.value() as u64;
-            c.save();
-        });
-    }
-    grp_dial.add(&long_press);
     groups.append(&grp_dial);
 
     // ---------- Comportamiento ----------

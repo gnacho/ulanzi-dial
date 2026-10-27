@@ -421,7 +421,7 @@ fn run_command(cmd: &str) {
 
 /// Opciones de los desplegables de la UI: (acción, etiqueta).
 /// Los `Command`/`Chord` personalizados solo se editan en el config.toml.
-pub fn spin_options() -> &'static [(Action, &'static str)] {
+pub fn rotate_options() -> &'static [(Action, &'static str)] {
     &[
         (Action::Volume, "Volumen"),
         (Action::Scroll, "Desplazamiento"),

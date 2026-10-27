@@ -51,7 +51,6 @@ fn dots() -> Vec<(Highlight, (f64, f64))> {
         (Highlight::Button(ButtonId::SideRightLower), dot(0.95, 0.59)),
         (Highlight::DialRotate, dot(0.31, 0.78)),
         (Highlight::DialPress, dot(0.50, 0.59)),
-        (Highlight::DialLong, dot(0.69, 0.78)),
     ]
 }
 
@@ -64,9 +63,8 @@ const CARD_POS: &[(Highlight, f64, f64)] = &[
     (Highlight::Button(ButtonId::SideLeftLower), 6.0, 330.0),
     (Highlight::Button(ButtonId::SideRightUpper), 664.0, 176.0),
     (Highlight::Button(ButtonId::SideRightLower), 664.0, 330.0),
-    (Highlight::DialRotate, 6.0, 470.0),
-    (Highlight::DialPress, 335.0, 470.0),
-    (Highlight::DialLong, 664.0, 470.0),
+    (Highlight::DialRotate, 167.0, 470.0),
+    (Highlight::DialPress, 503.0, 470.0),
 ];
 
 /// Qué tarjeta resaltar cuando llega un evento real del dial.
@@ -75,7 +73,6 @@ pub enum Highlight {
     Button(ButtonId),
     DialRotate,
     DialPress,
-    DialLong,
 }
 
 /// Tarjeta con su punto de la foto y el control al que representa.
@@ -186,10 +183,7 @@ impl ControlMap {
         let links: Rc<RefCell<Vec<Link>>> = Rc::new(RefCell::new(Vec::new()));
 
         let on_toast = Rc::new(on_toast);
-        let mk_binding = |cfg: &Rc<RefCell<Config>>,
-                          id: ButtonId,
-                          mode: &'static str,
-                          toast: Rc<dyn Fn(String)>| {
+        let mk_binding = |cfg: &Rc<RefCell<Config>>, id: ButtonId, toast: Rc<dyn Fn(String)>| {
             let cfg = cfg.clone();
             let label = id.label();
             move |action: Action| {
@@ -200,43 +194,29 @@ impl ControlMap {
                             .entry(id)
                             .or_insert_with(|| crate::config::ControlBinding {
                                 press: Action::None,
-                                spin: Action::None,
                             });
-                    match mode {
-                        "press" => binding.press = action.clone(),
-                        _ => binding.spin = action.clone(),
-                    }
+                    binding.press = action.clone();
                     c.save();
                 }
-                let what = if mode == "press" {
-                    "pulsar"
-                } else {
-                    "rueda + botón"
-                };
-                toast(format!("{label} · {what} → {}", action.label()));
+                toast(format!("{label} → {}", action.label()));
             }
         };
 
-        // Tarjeta de un botón con sus dos modos (Pulsar / Girar).
+        // Tarjeta de un botón: solo tiene acción de pulsar.
         let button_card = |id: ButtonId| -> gtk::Box {
-            let (press_cur, spin_cur) = {
+            let press_cur = {
                 let c = config.borrow();
                 match c.buttons.get(&id) {
-                    Some(b) => (b.press.clone(), b.spin.clone()),
-                    None => (Action::None, Action::None),
+                    Some(b) => b.press.clone(),
+                    None => Action::None,
                 }
             };
             let press_dd = dropdown(
                 actions::press_options(),
                 &press_cur,
-                mk_binding(&config, id, "press", on_toast.clone()),
+                mk_binding(&config, id, on_toast.clone()),
             );
-            let spin_dd = dropdown(
-                actions::spin_options(),
-                &spin_cur,
-                mk_binding(&config, id, "spin", on_toast.clone()),
-            );
-            control_card(id.label(), &[("Pulsar", press_dd), ("Girar", spin_dd)])
+            control_card(id.label(), &[("Pulsar", press_dd)])
         };
 
         for id in [
@@ -263,18 +243,12 @@ impl ControlMap {
                 Highlight::DialRotate,
                 "Rueda · girar",
                 |c| c.dial_rotate.clone(),
-                actions::spin_options(),
+                actions::rotate_options(),
             ),
             (
                 Highlight::DialPress,
                 "Rueda · pulsar",
                 |c| c.dial_press.clone(),
-                actions::press_options(),
-            ),
-            (
-                Highlight::DialLong,
-                "Rueda · pulsación larga",
-                |c| c.dial_long_press.clone(),
                 actions::press_options(),
             ),
         ];
@@ -290,7 +264,6 @@ impl ControlMap {
                     match hl2 {
                         Highlight::DialRotate => c.dial_rotate = action.clone(),
                         Highlight::DialPress => c.dial_press = action.clone(),
-                        Highlight::DialLong => c.dial_long_press = action.clone(),
                         _ => {}
                     }
                     c.save();

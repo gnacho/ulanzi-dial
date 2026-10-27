@@ -10,9 +10,8 @@ Configurador GTK4 + libadwaita (Rust) para el **Ulanzi Dial D100H** en Linux.
   no es un canal de eventos en tiempo real — ver AetherSDR #3232).
 - **Captura exclusiva** (`EVIOCGRAB`): las teclas multimedia que emite el
   firmware no se filtran a otras aplicaciones.
-- Rueda (giro, pulsación, pulsación larga) y 7 botones (3 superiores +
-  2 por lado) asignables por gesto, incluidas las **combinaciones
-  rueda + botón mantenido**.
+- Rueda (giro y pulsación) y 7 botones (3 superiores + 2 por lado)
+  asignables, cada control con su propia acción.
 - Acciones vía **uinput** (teclado/ratón virtual): volumen, brillo, scroll,
   zoom, pistas, deshacer/rehacer, copiar/pegar, captura, bloqueo, atajos y
   comandos personalizados.
@@ -92,13 +91,14 @@ exclusiva, 27-Oct-2026):
 | Lateral derecho arriba | `Ctrl+Y` |
 | Lateral derecho abajo | `Ctrl+Z` |
 
-Dos particularidades de este firmware:
+Tres particularidades de este firmware, medidas con el aparato en la mano:
 
 - Suelta Ctrl antes que la letra del combo (el decoder resuelve la liberación
   por la tecla, no por el estado de Ctrl).
 - No informa de una pulsación mantenida en la rueda: manda pulsación y
-  liberación seguidas, así que la acción de pulsación larga no llega a
-  dispararse.
+  liberación seguidas, así que no existe la pulsación larga.
+- Mientras un botón está pulsado no emite giros: la rueda y los botones no se
+  pueden combinar, así que cada uno tiene una sola acción.
 
 Con el dial emparejado puedes comprobar el mapa en tu unidad:
 

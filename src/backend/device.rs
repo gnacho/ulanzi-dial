@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use async_channel::Sender;
 use evdev::{Device, EventType, InputEvent, Key};
@@ -70,7 +70,6 @@ pub fn read_battery() -> Option<u8> {
 
 pub struct ReaderConfig {
     pub keymap: KeyMap,
-    pub long_press_ms: u64,
     /// Si es true, aplica EVIOCGRAB al abrir el dispositivo.
     pub exclusive_grab: bool,
 }
@@ -84,15 +83,10 @@ pub fn spawn_reader(cfg: ReaderConfig, tx: Sender<BackendMsg>) -> thread::JoinHa
 }
 
 fn reader_loop(cfg: ReaderConfig, tx: Sender<BackendMsg>) {
-    let epoch = Instant::now();
-    let mut next_rescan = Instant::now();
-
     loop {
         let Some((path, mut device)) = find_device() else {
-            if next_rescan <= Instant::now() {
-                next_rescan = Instant::now() + RESCAN_INTERVAL;
-            }
-            thread::sleep(Duration::from_millis(100));
+            // Sin dispositivo: reescaneo periódico hasta que aparezca.
+            thread::sleep(RESCAN_INTERVAL);
             continue;
         };
 
@@ -120,14 +114,14 @@ fn reader_loop(cfg: ReaderConfig, tx: Sender<BackendMsg>) {
             let _ = tx.send_blocking(BackendMsg::Battery(pct));
         }
 
-        let mut decoder = Decoder::new(cfg.keymap.clone(), cfg.long_press_ms);
+        let mut decoder = Decoder::new(cfg.keymap.clone());
 
         // Bucle de lectura hasta que el dispositivo desaparece o da error.
         'read: loop {
             match device.fetch_events() {
                 Ok(events) => {
                     for ev in events {
-                        handle_raw(ev, epoch, &mut decoder, &tx);
+                        handle_raw(ev, &mut decoder, &tx);
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
@@ -137,10 +131,7 @@ fn reader_loop(cfg: ReaderConfig, tx: Sender<BackendMsg>) {
                 }
             }
 
-            // Pulsación larga y detección de desconexión por desaparición del nodo.
-            if let Some(long) = decoder.tick(epoch.elapsed().as_millis() as u64) {
-                let _ = tx.send_blocking(BackendMsg::Event(long));
-            }
+            // Detección de desconexión por desaparición del nodo.
             if !Path::new(&path).exists() {
                 break 'read;
             }
@@ -152,14 +143,14 @@ fn reader_loop(cfg: ReaderConfig, tx: Sender<BackendMsg>) {
     }
 }
 
-fn handle_raw(ev: InputEvent, epoch: Instant, decoder: &mut Decoder, tx: &Sender<BackendMsg>) {
+fn handle_raw(ev: InputEvent, decoder: &mut Decoder, tx: &Sender<BackendMsg>) {
     if ev.event_type() != EventType::KEY {
         return;
     }
     let raw = RawKeyEvent {
         key: Key(ev.code()),
         value: ev.value(),
-        time_ms: epoch.elapsed().as_millis() as u64,
+        time_ms: 0,
     };
     for gesture in decoder.feed(raw) {
         let _ = tx.send_blocking(BackendMsg::Event(gesture));

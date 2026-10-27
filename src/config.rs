@@ -15,8 +15,6 @@ use crate::backend::keymap::{parse_combo, ButtonId, KeyMap};
 pub struct ControlBinding {
     /// Acción al pulsar el botón.
     pub press: Action,
-    /// Acción de la rueda mientras el botón se mantiene pulsado.
-    pub spin: Action,
 }
 
 /// Cómo se aplica el volumen al girar la rueda.
@@ -45,14 +43,12 @@ pub struct Config {
     /// Salto de volumen en tanto por ciento por muesca (solo `volume_mode = "mixer"`).
     pub volume_step: u8,
     pub invert: bool,
-    pub long_press_ms: u64,
     pub show_hud: bool,
     pub exclusive_grab: bool,
     pub autostart: bool,
 
     pub dial_rotate: Action,
     pub dial_press: Action,
-    pub dial_long_press: Action,
 
     /// Asignación por botón físico (claves kebab-case: "top-left", …).
     pub buttons: HashMap<ButtonId, ControlBinding>,
@@ -90,49 +86,42 @@ impl Default for Config {
             ButtonId::TopLeft,
             ControlBinding {
                 press: Action::Undo,
-                spin: Action::Zoom,
             },
         );
         buttons.insert(
             ButtonId::TopCenter,
             ControlBinding {
                 press: Action::PlayPause,
-                spin: Action::Volume,
             },
         );
         buttons.insert(
             ButtonId::TopRight,
             ControlBinding {
                 press: Action::Redo,
-                spin: Action::Brightness,
             },
         );
         buttons.insert(
             ButtonId::SideLeftUpper,
             ControlBinding {
                 press: Action::Copy,
-                spin: Action::Scroll,
             },
         );
         buttons.insert(
             ButtonId::SideLeftLower,
             ControlBinding {
                 press: Action::Paste,
-                spin: Action::HScroll,
             },
         );
         buttons.insert(
             ButtonId::SideRightUpper,
             ControlBinding {
                 press: Action::Screenshot,
-                spin: Action::Track,
             },
         );
         buttons.insert(
             ButtonId::SideRightLower,
             ControlBinding {
                 press: Action::Lock,
-                spin: Action::None,
             },
         );
         Self {
@@ -140,13 +129,11 @@ impl Default for Config {
             volume_mode: VolumeMode::Keys,
             volume_step: 3,
             invert: false,
-            long_press_ms: 750,
             show_hud: true,
             exclusive_grab: true,
             autostart: false,
             dial_rotate: Action::Volume,
             dial_press: Action::Mute,
-            dial_long_press: Action::None,
             buttons,
             keymap: HashMap::new(),
             profiles: HashMap::new(),
@@ -220,7 +207,6 @@ mod tests {
         let text = toml::to_string_pretty(&cfg).expect("serialize");
         let back: Config = toml::from_str(&text).expect("deserialize");
         assert_eq!(back.sensitivity, 5);
-        assert_eq!(back.long_press_ms, 750);
         assert_eq!(back.buttons.len(), 7);
         assert_eq!(back.buttons[&ButtonId::TopLeft].press, Action::Undo);
     }
@@ -234,7 +220,6 @@ mod tests {
         let cfg: Config = toml::from_str(text).expect("parse");
         assert_eq!(cfg.sensitivity, 8);
         assert!(cfg.invert);
-        assert_eq!(cfg.long_press_ms, 750); // default rellenado
         assert_eq!(cfg.buttons.len(), 7); // default rellenado
         assert_eq!(cfg.volume_mode, VolumeMode::Keys);
     }
