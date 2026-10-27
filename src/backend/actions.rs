@@ -107,6 +107,29 @@ impl Action {
             Action::Chord(c) => format!("Atajo: {c}"),
         }
     }
+
+    /// Icono simbólico de Adwaita que representa la acción en los selectores.
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Action::None => "action-unavailable-symbolic",
+            Action::Volume => "audio-volume-high-symbolic",
+            Action::Scroll => "input-mouse-symbolic",
+            Action::HScroll => "go-next-symbolic",
+            Action::Brightness => "display-brightness-symbolic",
+            Action::Zoom => "zoom-in-symbolic",
+            Action::Track => "media-skip-forward-symbolic",
+            Action::Mute => "audio-volume-muted-symbolic",
+            Action::PlayPause => "media-playback-start-symbolic",
+            Action::Undo => "edit-undo-symbolic",
+            Action::Redo => "edit-redo-symbolic",
+            Action::Copy => "edit-copy-symbolic",
+            Action::Paste => "edit-paste-symbolic",
+            Action::Screenshot => "applets-screenshooter-symbolic",
+            Action::Lock => "system-lock-screen-symbolic",
+            Action::Command(_) => "utilities-terminal-symbolic",
+            Action::Chord(_) => "input-keyboard-symbolic",
+        }
+    }
 }
 
 /// Parsea el valor de texto guardado en el config (kebab-case o con payload).

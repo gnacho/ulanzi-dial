@@ -139,6 +139,7 @@ fn dropdown(
     dd.add_css_class("flat");
     dd.set_size_request(150, -1);
     dd.set_hexpand(true);
+    dd.set_list_factory(Some(&icon_factory(options)));
     dd.connect_selected_notify(move |dd| {
         let idx = dd.selected() as usize;
         if let Some((action, _)) = options.get(idx) {
@@ -146,6 +147,64 @@ fn dropdown(
         }
     });
     dd
+}
+
+/// Fábrica de items de la lista desplegable: icono simbólico más etiqueta.
+///
+/// El icono se pinta solo en la lista abierta. El botón cerrado sigue mostrando
+/// texto, porque las tarjetas del mapa tienen 290 px y un icono más el texto no
+/// cabe junto al chip de modo y al botón de atajo.
+fn icon_factory(options: &'static [(Action, &'static str)]) -> gtk::SignalListItemFactory {
+    let factory = gtk::SignalListItemFactory::new();
+
+    factory.connect_setup(|_, object| {
+        let Some(item) = object.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        let image = gtk::Image::new();
+        image.set_pixel_size(16);
+        let label = gtk::Label::new(None);
+        label.set_xalign(0.0);
+        row.append(&image);
+        row.append(&label);
+        item.set_child(Some(&row));
+    });
+
+    factory.connect_bind(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
+        let (Some(child), Some(object)) = (item.child(), item.item()) else {
+            return;
+        };
+        let Ok(row) = child.downcast::<gtk::Box>() else {
+            return;
+        };
+        let (Some(first), Ok(string)) = (row.first_child(), object.downcast::<gtk::StringObject>())
+        else {
+            return;
+        };
+        let Ok(image) = first.downcast::<gtk::Image>() else {
+            return;
+        };
+        let Some(second) = image.next_sibling() else {
+            return;
+        };
+        let Ok(label) = second.downcast::<gtk::Label>() else {
+            return;
+        };
+        let text = string.string();
+        let icon = options
+            .iter()
+            .find(|(_, label)| *label == text.as_str())
+            .map(|(action, _)| action.icon())
+            .unwrap_or("action-unavailable-symbolic");
+        image.set_icon_name(Some(icon));
+        label.set_text(text.as_str());
+    });
+
+    factory
 }
 
 fn control_card(name: &str, rows: &[(&str, &gtk::Widget)]) -> gtk::Box {
