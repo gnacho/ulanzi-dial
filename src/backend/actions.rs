@@ -9,6 +9,7 @@ use evdev::uinput::VirtualDevice;
 use evdev::{AttributeSet, EventType, InputEvent, Key, RelativeAxisType};
 use serde::{Deserialize, Serialize};
 
+use crate::backend::keymap::{parse_combo, KeyCombo};
 use crate::config::VolumeMode;
 
 /// Acción asignable a un gesto. Se serializa en kebab-case en el config.toml.
@@ -61,6 +62,29 @@ impl Action {
         "lock",
         "none",
     ];
+
+    /// Atajo que emite la acción cuando es una combinación de teclas.
+    /// Lo usan la UI (para enseñarlo) y el emisor (para mandarlo).
+    pub fn shortcut(&self) -> Option<KeyCombo> {
+        match self {
+            Action::Undo => Some(KeyCombo::ctrl(Key::KEY_Z)),
+            Action::Redo => Some(KeyCombo::ctrl(Key::KEY_Y)),
+            Action::Copy => Some(KeyCombo::ctrl(Key::KEY_C)),
+            Action::Paste => Some(KeyCombo::ctrl(Key::KEY_V)),
+            Action::PlayPause => Some(KeyCombo::plain(Key::KEY_PLAYPAUSE)),
+            Action::Mute => Some(KeyCombo::plain(Key::KEY_MUTE)),
+            Action::Screenshot => Some(KeyCombo::plain(Key::KEY_PRINT)),
+            Action::Lock => Some(KeyCombo {
+                ctrl: false,
+                shift: false,
+                alt: false,
+                logo: true,
+                key: Key::KEY_L,
+            }),
+            Action::Chord(chord) => parse_combo(chord),
+            _ => None,
+        }
+    }
 
     pub fn label(&self) -> String {
         match self {
@@ -221,15 +245,26 @@ impl ActionExecutor {
         self.emit(&[(EventType::KEY, key.0, 1), (EventType::KEY, key.0, 0)]);
     }
 
-    fn tap_chord(&mut self, ctrl: bool, key: Key) {
+    /// Pulsa un atajo completo: modificadores, tecla y liberación inversa.
+    fn tap_chord(&mut self, combo: &KeyCombo) {
+        let modifiers = [
+            (combo.ctrl, Key::KEY_LEFTCTRL),
+            (combo.shift, Key::KEY_LEFTSHIFT),
+            (combo.alt, Key::KEY_LEFTALT),
+            (combo.logo, Key::KEY_LEFTMETA),
+        ];
         let mut evs = Vec::new();
-        if ctrl {
-            evs.push((EventType::KEY, Key::KEY_LEFTCTRL.0, 1));
+        for (held, key) in modifiers {
+            if held {
+                evs.push((EventType::KEY, key.0, 1));
+            }
         }
-        evs.push((EventType::KEY, key.0, 1));
-        evs.push((EventType::KEY, key.0, 0));
-        if ctrl {
-            evs.push((EventType::KEY, Key::KEY_LEFTCTRL.0, 0));
+        evs.push((EventType::KEY, combo.key.0, 1));
+        evs.push((EventType::KEY, combo.key.0, 0));
+        for (held, key) in modifiers.iter().rev() {
+            if *held {
+                evs.push((EventType::KEY, key.0, 0));
+            }
         }
         self.emit(&evs);
     }
@@ -294,7 +329,7 @@ impl ActionExecutor {
                     Key::KEY_MINUS
                 };
                 for _ in 0..steps.abs() {
-                    self.tap_chord(true, key);
+                    self.tap_chord(&KeyCombo::ctrl(key));
                 }
             }
             Action::Scroll => {
@@ -396,16 +431,16 @@ impl ActionExecutor {
         match action {
             Action::Mute => self.tap_key(Key::KEY_MUTE),
             Action::PlayPause => self.tap_key(Key::KEY_PLAYPAUSE),
-            Action::Undo => self.tap_chord(true, Key::KEY_Z),
-            Action::Redo => self.tap_chord(true, Key::KEY_Y),
-            Action::Copy => self.tap_chord(true, Key::KEY_C),
-            Action::Paste => self.tap_chord(true, Key::KEY_V),
+            Action::Undo => self.tap_chord(&KeyCombo::ctrl(Key::KEY_Z)),
+            Action::Redo => self.tap_chord(&KeyCombo::ctrl(Key::KEY_Y)),
+            Action::Copy => self.tap_chord(&KeyCombo::ctrl(Key::KEY_C)),
+            Action::Paste => self.tap_chord(&KeyCombo::ctrl(Key::KEY_V)),
             Action::Screenshot => self.tap_key(Key::KEY_SYSRQ),
             Action::Lock => run_command("loginctl lock-session"),
             Action::Command(cmd) => run_command(cmd),
             Action::Chord(chord) => {
                 if let Some(combo) = super::keymap::parse_combo(chord) {
-                    self.tap_chord(combo.ctrl, combo.key);
+                    self.tap_chord(&combo);
                 }
             }
             _ => {}

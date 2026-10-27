@@ -8,6 +8,3 @@ pub mod actions;
 pub mod decoder;
 pub mod device;
 pub mod keymap;
-
-pub use decoder::DialEvent;
-pub use keymap::ButtonId;
