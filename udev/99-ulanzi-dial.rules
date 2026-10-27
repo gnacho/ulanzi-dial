@@ -1,0 +1,13 @@
+# Ulanzi Dial D100H — acceso de usuario a evdev y uinput.
+#
+# El dial se anuncia por BT como HID y crea nodos /dev/input/event*.
+# VID/PID FFF1:0082 es un placeholder genérico de Ulanzi, así que la regla
+# filtra por nombre del dispositivo, no por VID/PID.
+#
+# uaccess da acceso al usuario con sesión activa en el seat.
+
+# Nodos de entrada del dial (teclado, ratón y sensores ABS_MISC)
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Ulanzi Dial*", TAG+="uaccess"
+
+# Dispositivo virtual uinput (salida de acciones: volumen, atajos, scroll…)
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

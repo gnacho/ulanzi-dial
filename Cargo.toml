@@ -1,0 +1,23 @@
+[package]
+name = "ulanzi-dial"
+version = "0.1.0"
+edition = "2021"
+description = "Configurador GTK4/libadwaita para el Ulanzi Dial D100H (Linux, evdev)"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+gtk4 = { version = "0.9", package = "gtk4", features = ["v4_12"] }
+libadwaita = { version = "0.7", package = "libadwaita", features = ["v1_4"] }
+# Nota: la UI usa gtk4-rs imperativo (sin relm4) para minimizar sorpresas en la
+# primera compilación; la estructura está pensada para migrar a relm4 después.
+evdev = "0.12"
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+async-channel = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
