@@ -1,50 +1,71 @@
-//! Watcher del identificador de la aplicación activa.
+//! Detección de la aplicación en primer plano.
 //!
-//! GNOME no deja a un proceso normal saber qué ventana tiene el foco
-//! (`org.gnome.Shell.Introspect.GetWindows` responde AccessDenied y Mutter no
-//! implementa `wlr-foreign-toplevel-management`). La vía soportada es la
-//! extensión propia de `gnome-extension/`, que publica el app-id en el bus de
-//! sesión y emite `Changed`. Aquí se consulta por sondeo: un `timeout` de un
-//! segundo es barato y no necesita maquinaria de señales asíncronas.
+//! GNOME no permite a un proceso normal saber qué ventana tiene el foco
+//! (`org.gnome.Shell.Introspect.GetWindows` responde `AccessDenied` y Mutter no
+//! implementa `wlr-foreign-toplevel-management`), así que la información llega
+//! desde la extensión de `gnome-extension/`: ella ve `notify::focus-window` y
+//! emite la señal `Changed(s)` en cuanto cambia el foco.
+//!
+//! Aquí solo hay una consulta al arrancar, para saber con qué aplicación
+//! empieza la sesión. A partir de ahí no se pregunta nada más: la app se queda
+//! dormida esperando la señal.
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Duration;
 
 use gtk4::gio;
-use gtk4::glib;
 
 const BUS_NAME: &str = "dev.ulanzi.Dial.Focus";
 const OBJECT_PATH: &str = "/dev/ulanzi/Dial/Focus";
 const INTERFACE: &str = "dev.ulanzi.Dial.Focus";
-const POLL: Duration = Duration::from_millis(1000);
 
-/// Vigila la ventana activa y llama a `on_change` solo cuando cambia.
-/// Si la extensión no está instalada o habilitada, no avisa de nada.
+thread_local! {
+    /// La suscripción se libera sola al soltarla, así que se guarda aquí para
+    /// que viva tanto como el proceso.
+    static SUBSCRIPTION: RefCell<Option<gio::SignalSubscriptionId>> = const { RefCell::new(None) };
+}
+
+/// Escucha los cambios de ventana activa y llama a `on_change` con el
+/// identificador de la aplicación. Si la extensión no está, recibe `None`.
 pub fn spawn_watcher(on_change: impl Fn(Option<String>) + 'static) {
     let connection = match gio::bus_get_sync(gio::BusType::Session, None::<&gio::Cancellable>) {
         Ok(connection) => connection,
-        Err(e) => {
-            tracing::warn!("sin bus de sesión, sin perfiles por app: {e}");
+        Err(err) => {
+            tracing::warn!("sin bus de sesión: {err}");
             return;
         }
     };
 
-    let last: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
-    let on_change = Rc::new(on_change);
+    // Estado de partida: una única consulta, y solo si la extensión responde.
+    let current = Rc::new(RefCell::new(query(&connection)));
+    on_change(current.borrow().clone());
 
-    glib::timeout_add_local(POLL, move || {
-        let app = query(&connection);
-        let mut slot = last.borrow_mut();
-        if *slot != app {
-            *slot = app.clone();
-            on_change(app);
-        }
-        glib::ControlFlow::Continue
-    });
+    let notify = Rc::new(on_change);
+    let subscription = connection.signal_subscribe(
+        None,
+        Some(INTERFACE),
+        Some("Changed"),
+        Some(OBJECT_PATH),
+        None,
+        gio::DBusSignalFlags::NONE,
+        move |_connection, _sender, _path, _interface, _signal, params| {
+            let Some((raw,)) = params.get::<(String,)>() else {
+                return;
+            };
+            let next = if raw.is_empty() { None } else { Some(raw) };
+            tracing::info!(app = ?next, "ventana en primer plano");
+            if *current.borrow() == next {
+                return;
+            }
+            *current.borrow_mut() = next.clone();
+            notify(next);
+        },
+    );
+
+    SUBSCRIPTION.with(|slot| *slot.borrow_mut() = Some(subscription));
 }
 
-/// Consulta el app-id actual. `None` si la extensión no responde.
+/// Pregunta una vez por la aplicación activa. Cadena vacía o error -> `None`.
 fn query(connection: &gio::DBusConnection) -> Option<String> {
     let reply = connection
         .call_sync(
@@ -59,7 +80,7 @@ fn query(connection: &gio::DBusConnection) -> Option<String> {
             None::<&gio::Cancellable>,
         )
         .ok()?;
-    let id: String = reply.get::<(String,)>()?.0;
+    let (id,) = reply.get::<(String,)>()?;
     if id.is_empty() {
         None
     } else {
