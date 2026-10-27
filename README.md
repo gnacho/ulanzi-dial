@@ -114,7 +114,7 @@ src/
     control_map.rs   mapa OpenLogi (foto + líneas + tarjetas)
     general_page.rs  pestaña General (ruleta, comportamiento, perfil)
     hud.rs           indicador en pantalla
-assets/              fotos del D100H (frontal y laterales)
+assets/              foto frontal del D100H
 udev/                regla udev para permisos de input
 ```
 

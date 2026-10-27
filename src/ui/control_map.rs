@@ -1,10 +1,11 @@
-//! Mapa del dispositivo estilo OpenLogi: foto frontal + vistas laterales con
-//! puntos de referencia, y una tarjeta por control con sus desplegables de
-//! acción (Pulsar / Girar).
+//! Mapa del dispositivo estilo OpenLogi: una sola foto frontal con un punto
+//! sobre cada control real y una tarjeta por control alrededor, unida a su
+//! punto por una línea guía.
 //!
-//! La disposición usa un `gtk::Grid`: las tarjetas fluyen alrededor del bloque
-//! de fotos, así que no se solapan aunque cambie el tema, la fuente o el
-//! escalado de la interfaz.
+//! Las tarjetas viven en un `gtk::Fixed` con coordenadas fijas, pero la línea
+//! y el punto se dibujan en una capa aparte que calcula la caja real de cada
+//! tarjeta al pintar (`compute_bounds`), así que la guía sigue apuntando al
+//! control correcto aunque el tema o la fuente cambien el alto de la tarjeta.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -19,21 +20,54 @@ use crate::backend::keymap::ButtonId;
 use crate::config::Config;
 
 const DEVICE_PNG: &[u8] = include_bytes!("../../assets/device.png");
-const SIDE_LEFT_PNG: &[u8] = include_bytes!("../../assets/side_left.png");
-const SIDE_RIGHT_PNG: &[u8] = include_bytes!("../../assets/side_right.png");
 
-/// Lienzo lógico del bloque de fotos (coordenadas del mockup) y su escala.
-const HERO_W: f64 = 640.0;
-const HERO_H: f64 = 456.0;
-const HERO_SCALE: f64 = 0.75;
+/// Lienzo del mapa, en píxeles lógicos.
+const CANVAS_W: f64 = 960.0;
+const CANVAS_H: f64 = 542.0;
 
-fn s(v: f64) -> f64 {
-    v * HERO_SCALE
+/// Foto frontal dentro del lienzo (aspecto 316x348).
+const PHOTO_X: f64 = 330.0;
+const PHOTO_Y: f64 = 120.0;
+const PHOTO_W: f64 = 300.0;
+const PHOTO_H: f64 = 330.0;
+
+const CARD_W: i32 = 290;
+
+/// Punto de un control expresado en fracciones de la foto (0..1). Sacado de
+/// la foto real: tres botones en la franja superior, dos pulsadores en cada
+/// canto lateral y la rueda en el centro.
+fn dot(fx: f64, fy: f64) -> (f64, f64) {
+    (PHOTO_X + fx * PHOTO_W, PHOTO_Y + fy * PHOTO_H)
 }
 
-fn s_i(v: f64) -> i32 {
-    (v * HERO_SCALE).round() as i32
+fn dots() -> Vec<(Highlight, (f64, f64))> {
+    vec![
+        (Highlight::Button(ButtonId::TopLeft), dot(0.17, 0.11)),
+        (Highlight::Button(ButtonId::TopCenter), dot(0.50, 0.11)),
+        (Highlight::Button(ButtonId::TopRight), dot(0.83, 0.11)),
+        (Highlight::Button(ButtonId::SideLeftUpper), dot(0.05, 0.37)),
+        (Highlight::Button(ButtonId::SideLeftLower), dot(0.05, 0.59)),
+        (Highlight::Button(ButtonId::SideRightUpper), dot(0.95, 0.37)),
+        (Highlight::Button(ButtonId::SideRightLower), dot(0.95, 0.59)),
+        (Highlight::DialRotate, dot(0.31, 0.78)),
+        (Highlight::DialPress, dot(0.50, 0.59)),
+        (Highlight::DialLong, dot(0.69, 0.78)),
+    ]
 }
+
+/// Posición de cada tarjeta en el lienzo. Alrededor de la foto, no encima.
+const CARD_POS: &[(Highlight, f64, f64)] = &[
+    (Highlight::Button(ButtonId::TopLeft), 6.0, 6.0),
+    (Highlight::Button(ButtonId::TopCenter), 335.0, 6.0),
+    (Highlight::Button(ButtonId::TopRight), 664.0, 6.0),
+    (Highlight::Button(ButtonId::SideLeftUpper), 6.0, 176.0),
+    (Highlight::Button(ButtonId::SideLeftLower), 6.0, 330.0),
+    (Highlight::Button(ButtonId::SideRightUpper), 664.0, 176.0),
+    (Highlight::Button(ButtonId::SideRightLower), 664.0, 330.0),
+    (Highlight::DialRotate, 6.0, 470.0),
+    (Highlight::DialPress, 335.0, 470.0),
+    (Highlight::DialLong, 664.0, 470.0),
+];
 
 /// Qué tarjeta resaltar cuando llega un evento real del dial.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -44,37 +78,19 @@ pub enum Highlight {
     DialLong,
 }
 
-// Líneas guía: de cada punto a la fila de tarjetas que le corresponde (arriba
-// para los botones superiores, abajo para los gestos de la rueda). Se dibujan
-// por debajo de las fotos, así que solo se ven en el espacio libre.
-const LINES: &[(f64, f64, f64, f64)] = &[
-    (245.0, 0.0, 245.0, 137.0),
-    (312.0, 0.0, 312.0, 137.0),
-    (388.0, 0.0, 388.0, 137.0),
-    (288.0, 215.0, 288.0, 456.0),
-    (307.0, 261.0, 307.0, 456.0),
-    (327.0, 222.0, 327.0, 456.0),
-];
-const DOTS: &[(f64, f64)] = &[
-    (245.0, 137.0),
-    (312.0, 137.0),
-    (388.0, 137.0),
-    (79.0, 162.0),
-    (79.0, 191.0),
-    (561.0, 162.0),
-    (561.0, 191.0),
-    (288.0, 215.0),
-    (307.0, 261.0),
-    (327.0, 222.0),
-];
-
-struct CardHandles {
-    container: gtk::Box,
+/// Tarjeta con su punto de la foto y el control al que representa.
+struct Link {
+    card: gtk::Box,
+    dot: (f64, f64),
+    target: Highlight,
 }
 
 pub struct ControlMap {
-    pub widget: gtk::Grid,
-    cards: HashMap<Highlight, CardHandles>,
+    pub widget: gtk::Fixed,
+    cards: Rc<RefCell<HashMap<Highlight, gtk::Box>>>,
+    selected: Rc<RefCell<Option<Highlight>>>,
+    transient: Rc<RefCell<Option<Highlight>>>,
+    overlay: gtk::DrawingArea,
 }
 
 fn texture(bytes: &'static [u8]) -> gtk::gdk::Texture {
@@ -82,14 +98,22 @@ fn texture(bytes: &'static [u8]) -> gtk::gdk::Texture {
         .expect("PNG de asset empaquetado")
 }
 
-fn picture(bytes: &'static [u8], x: f64, y: f64, w: f64, h: f64, fixed: &gtk::Fixed) {
+fn picture(bytes: &'static [u8]) -> gtk::Picture {
     let pic = gtk::Picture::for_paintable(&texture(bytes));
     pic.set_can_target(false);
     pic.set_content_fit(gtk::ContentFit::Contain);
-    pic.set_size_request(s_i(w), s_i(h));
-    // Marco blanco tipo "foto de producto"
+    pic.set_size_request(PHOTO_W as i32, PHOTO_H as i32);
     pic.add_css_class("dev-photo");
-    fixed.put(&pic, s(x), s(y));
+    pic
+}
+
+/// Color de acento del sistema (el que tenga configurado el escritorio).
+#[allow(deprecated)]
+fn accent(widget: &impl IsA<gtk::Widget>) -> gtk::gdk::RGBA {
+    widget
+        .style_context()
+        .lookup_color("accent_color")
+        .unwrap_or_else(|| gtk::gdk::RGBA::new(0.21, 0.52, 0.89, 1.0))
 }
 
 /// Crea un desplegable plano con las opciones dadas y el callback de cambio.
@@ -116,7 +140,7 @@ fn dropdown(
 fn control_card(name: &str, rows: &[(&str, gtk::DropDown)]) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Vertical, 2);
     card.add_css_class("ctl-card");
-    card.set_hexpand(true);
+    card.set_size_request(CARD_W, -1);
     card.set_halign(gtk::Align::Fill);
 
     let title = gtk::Label::new(Some(name));
@@ -130,8 +154,8 @@ fn control_card(name: &str, rows: &[(&str, gtk::DropDown)]) -> gtk::Box {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let chip = gtk::Label::new(Some(mode));
         chip.add_css_class("ctl-mode");
+        chip.set_valign(gtk::Align::Center);
         row.append(&chip);
-        dd.set_hexpand(true);
         row.append(dd);
         card.append(&row);
     }
@@ -139,79 +163,27 @@ fn control_card(name: &str, rows: &[(&str, gtk::DropDown)]) -> gtk::Box {
     card
 }
 
-/// Bloque central: las tres fotos con sus puntos y líneas de referencia.
-fn build_hero() -> gtk::Fixed {
-    let w = s_i(HERO_W);
-    let h = s_i(HERO_H);
-
-    let fixed = gtk::Fixed::new();
-    fixed.set_size_request(w, h);
-    fixed.set_halign(gtk::Align::Center);
-    fixed.set_valign(gtk::Align::Center);
-
-    // 1) líneas debajo de las fotos
-    let lines = gtk::DrawingArea::new();
-    lines.set_size_request(w, h);
-    lines.set_can_target(false);
-    lines.set_draw_func(|_, cr, _, _| {
-        cr.scale(HERO_SCALE, HERO_SCALE);
-        cr.set_source_rgba(0.5, 0.5, 0.5, 0.55);
-        cr.set_line_width(1.4);
-        for (x1, y1, x2, y2) in LINES {
-            cr.move_to(*x1, *y1);
-            cr.line_to(*x2, *y2);
-        }
-        let _ = cr.stroke();
-    });
-    fixed.put(&lines, 0.0, 0.0);
-
-    // 2) fotos
-    picture(DEVICE_PNG, 206.0, 110.0, 228.0, 250.0, &fixed);
-    picture(SIDE_LEFT_PNG, 8.0, 120.0, 120.0, 120.0, &fixed);
-    picture(SIDE_RIGHT_PNG, 512.0, 120.0, 120.0, 120.0, &fixed);
-
-    // 3) puntos encima de las fotos
-    let dots = gtk::DrawingArea::new();
-    dots.set_size_request(w, h);
-    dots.set_can_target(false);
-    dots.set_draw_func(|_, cr, _, _| {
-        cr.scale(HERO_SCALE, HERO_SCALE);
-        for (x, y) in DOTS {
-            cr.set_source_rgba(0.5, 0.5, 0.5, 0.8);
-            cr.arc(*x, *y, 4.0, 0.0, std::f64::consts::TAU);
-            let _ = cr.fill_preserve();
-            cr.set_source_rgba(0.95, 0.95, 0.95, 0.9);
-            let _ = cr.fill();
-            cr.set_source_rgba(0.5, 0.5, 0.5, 0.8);
-            cr.arc(*x, *y, 4.0, 0.0, std::f64::consts::TAU);
-            let _ = cr.stroke();
-        }
-    });
-    fixed.put(&dots, 0.0, 0.0);
-
-    fixed
-}
-
-/// Columna vertical de tarjetas (lados del dispositivo).
-fn column(cards: &[gtk::Box]) -> gtk::Box {
-    let col = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    col.set_valign(gtk::Align::Center);
-    col.set_halign(gtk::Align::Fill);
-    col.set_hexpand(true);
-    for card in cards {
-        col.append(card);
-    }
-    col
-}
-
 impl ControlMap {
     pub fn new(config: Rc<RefCell<Config>>, on_toast: impl Fn(String) + 'static) -> Self {
-        let grid = gtk::Grid::new();
-        grid.set_column_spacing(16);
-        grid.set_row_spacing(14);
-        grid.set_halign(gtk::Align::Center);
+        let fixed = gtk::Fixed::new();
+        fixed.set_size_request(CANVAS_W as i32, CANVAS_H as i32);
+        fixed.set_halign(gtk::Align::Center);
+        fixed.set_valign(gtk::Align::Center);
 
-        let mut cards: HashMap<Highlight, CardHandles> = HashMap::new();
+        // 1) la foto, al fondo
+        fixed.put(&picture(DEVICE_PNG), PHOTO_X, PHOTO_Y);
+
+        // 2) capa de líneas y puntos, por encima de la foto
+        let overlay = gtk::DrawingArea::new();
+        overlay.set_size_request(CANVAS_W as i32, CANVAS_H as i32);
+        overlay.set_can_target(false);
+        fixed.put(&overlay, 0.0, 0.0);
+
+        let cards: Rc<RefCell<HashMap<Highlight, gtk::Box>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+        let selected: Rc<RefCell<Option<Highlight>>> = Rc::new(RefCell::new(None));
+        let transient: Rc<RefCell<Option<Highlight>>> = Rc::new(RefCell::new(None));
+        let links: Rc<RefCell<Vec<Link>>> = Rc::new(RefCell::new(Vec::new()));
 
         let on_toast = Rc::new(on_toast);
         let mk_binding = |cfg: &Rc<RefCell<Config>>,
@@ -246,7 +218,7 @@ impl ControlMap {
         };
 
         // Tarjeta de un botón con sus dos modos (Pulsar / Girar).
-        let mut button_card = |id: ButtonId| -> gtk::Box {
+        let button_card = |id: ButtonId| -> gtk::Box {
             let (press_cur, spin_cur) = {
                 let c = config.borrow();
                 match c.buttons.get(&id) {
@@ -264,33 +236,23 @@ impl ControlMap {
                 &spin_cur,
                 mk_binding(&config, id, "spin", on_toast.clone()),
             );
-            let card = control_card(id.label(), &[("Pulsar", press_dd), ("Girar", spin_dd)]);
-            cards.insert(
-                Highlight::Button(id),
-                CardHandles {
-                    container: card.clone(),
-                },
-            );
-            card
+            control_card(id.label(), &[("Pulsar", press_dd), ("Girar", spin_dd)])
         };
 
-        // Fila superior (la del centro no se expande: marca el ancho del bloque de fotos)
-        let top_left = button_card(ButtonId::TopLeft);
-        let top_center = button_card(ButtonId::TopCenter);
-        let top_right = button_card(ButtonId::TopRight);
-        top_center.set_hexpand(false);
+        for id in [
+            ButtonId::TopLeft,
+            ButtonId::TopCenter,
+            ButtonId::TopRight,
+            ButtonId::SideLeftUpper,
+            ButtonId::SideLeftLower,
+            ButtonId::SideRightUpper,
+            ButtonId::SideRightLower,
+        ] {
+            let card = button_card(id);
+            cards.borrow_mut().insert(Highlight::Button(id), card);
+        }
 
-        // Filas laterales
-        let side_left = column(&[
-            button_card(ButtonId::SideLeftUpper),
-            button_card(ButtonId::SideLeftLower),
-        ]);
-        let side_right = column(&[
-            button_card(ButtonId::SideRightUpper),
-            button_card(ButtonId::SideRightLower),
-        ]);
-
-        // Gestos de la rueda (un desplegable cada uno)
+        // Gestos de la rueda (un desplegable cada uno).
         let dial_specs: &[(
             Highlight,
             &'static str,
@@ -316,7 +278,6 @@ impl ControlMap {
                 actions::press_options(),
             ),
         ];
-        let mut dial_cards = Vec::new();
         for (hl, name, getter, options) in dial_specs {
             let name: &'static str = name;
             let current = getter(&config.borrow());
@@ -337,45 +298,158 @@ impl ControlMap {
                 toast(format!("{} → {}", name, action.label()));
             });
             let card = control_card(name, &[("Acción", dd)]);
-            cards.insert(
-                *hl,
-                CardHandles {
-                    container: card.clone(),
-                },
-            );
-            dial_cards.push(card);
+            cards.borrow_mut().insert(*hl, card);
         }
 
-        let hero = build_hero();
+        // 3) colocar cada tarjeta y registrar su enlace con el punto.
+        let dot_map: HashMap<Highlight, (f64, f64)> = dots().into_iter().collect();
+        for (hl, x, y) in CARD_POS {
+            let Some(card) = cards.borrow_mut().remove(hl) else {
+                continue;
+            };
+            fixed.put(&card, *x, *y);
 
-        grid.attach(&top_left, 0, 0, 1, 1);
-        grid.attach(&top_center, 1, 0, 1, 1);
-        grid.attach(&top_right, 2, 0, 1, 1);
-        grid.attach(&side_left, 0, 1, 1, 1);
-        grid.attach(&hero, 1, 1, 1, 1);
-        grid.attach(&side_right, 2, 1, 1, 1);
-        for (col, card) in dial_cards.iter().enumerate() {
-            // La tarjeta central sigue el ancho del bloque de fotos, no se estira.
-            if col == 1 {
-                card.set_hexpand(false);
+            // Al pulsar la tarjeta queda seleccionada (acento del sistema).
+            let gesture = gtk::GestureClick::new();
+            {
+                let hl = *hl;
+                let selected = selected.clone();
+                let cards = cards.clone();
+                let overlay = overlay.clone();
+                gesture.connect_pressed(move |_, _, _, _| {
+                    for (_, card) in cards.borrow().iter() {
+                        card.remove_css_class("ctl-selected");
+                    }
+                    *selected.borrow_mut() = Some(hl);
+                    if let Some(card) = cards.borrow().get(&hl) {
+                        card.add_css_class("ctl-selected");
+                    }
+                    overlay.queue_draw();
+                });
             }
-            grid.attach(card, col as i32, 2, 1, 1);
+            card.add_controller(gesture);
+
+            links.borrow_mut().push(Link {
+                card: card.clone(),
+                dot: *dot_map.get(hl).unwrap_or(&(0.0, 0.0)),
+                target: *hl,
+            });
+            cards.borrow_mut().insert(*hl, card);
+        }
+
+        // 4) repintar durante los primeros fotogramas: al colocarse las tarjetas
+        //    la caja real cambia, y la guía se calcula con esa caja.
+        {
+            let overlay_tick = overlay.clone();
+            let frames = std::cell::Cell::new(0u32);
+            fixed.add_tick_callback(move |_, _| {
+                overlay_tick.queue_draw();
+                frames.set(frames.get() + 1);
+                if frames.get() < 20 {
+                    gtk::glib::ControlFlow::Continue
+                } else {
+                    gtk::glib::ControlFlow::Break
+                }
+            });
+        }
+
+        // 5) pintura de líneas y puntos.
+        {
+            let links = links.clone();
+            let selected = selected.clone();
+            let transient = transient.clone();
+            let dot_map = dot_map.clone();
+            overlay.set_draw_func(move |area, cr, _, _| {
+                let Some(parent) = area.parent() else {
+                    return;
+                };
+                let accent = accent(area);
+
+                // Líneas: del borde de la tarjeta más cercano al punto hasta el punto.
+                for link in links.borrow().iter() {
+                    let Some(rect) = link.card.compute_bounds(&parent) else {
+                        continue;
+                    };
+                    let (dx, dy) = link.dot;
+                    let x = dx.clamp(rect.x() as f64, (rect.x() + rect.width()) as f64);
+                    let y = dy.clamp(rect.y() as f64, (rect.y() + rect.height()) as f64);
+                    let highlighted = *selected.borrow() == Some(link.target)
+                        || *transient.borrow() == Some(link.target);
+                    if highlighted {
+                        cr.set_source_rgba(
+                            accent.red() as f64,
+                            accent.green() as f64,
+                            accent.blue() as f64,
+                            0.85,
+                        );
+                        cr.set_line_width(2.0);
+                    } else {
+                        cr.set_source_rgba(0.45, 0.45, 0.5, 0.4);
+                        cr.set_line_width(1.2);
+                    }
+                    cr.move_to(x, y);
+                    cr.line_to(dx, dy);
+                    let _ = cr.stroke();
+                }
+
+                // Puntos: uno por control, sobre la foto.
+                let sel = *selected.borrow();
+                let tr = *transient.borrow();
+                for (target, (dx, dy)) in dot_map.iter() {
+                    let active = sel == Some(*target) || tr == Some(*target);
+                    if active {
+                        cr.set_source_rgba(
+                            accent.red() as f64,
+                            accent.green() as f64,
+                            accent.blue() as f64,
+                            0.22,
+                        );
+                        cr.arc(*dx, *dy, 10.0, 0.0, std::f64::consts::TAU);
+                        let _ = cr.fill();
+                        cr.set_source_rgba(
+                            accent.red() as f64,
+                            accent.green() as f64,
+                            accent.blue() as f64,
+                            1.0,
+                        );
+                        cr.arc(*dx, *dy, 5.0, 0.0, std::f64::consts::TAU);
+                    } else {
+                        cr.set_source_rgba(0.30, 0.30, 0.34, 0.75);
+                        cr.arc(*dx, *dy, 3.6, 0.0, std::f64::consts::TAU);
+                    }
+                    let _ = cr.fill_preserve();
+                    cr.set_source_rgba(1.0, 1.0, 1.0, 0.9);
+                    cr.set_line_width(1.4);
+                    let _ = cr.stroke();
+                }
+            });
         }
 
         Self {
-            widget: grid,
+            widget: fixed,
             cards,
+            selected,
+            transient,
+            overlay,
         }
     }
+
     /// Resalta brevemente la tarjeta del control que generó un evento real.
     pub fn highlight(&self, target: Highlight) {
-        let Some(card) = self.cards.get(&target) else {
-            return;
-        };
-        card.container.add_css_class("ctl-active");
-        let container = card.container.clone();
+        *self.transient.borrow_mut() = Some(target);
+        if let Some(card) = self.cards.borrow().get(&target) {
+            card.add_css_class("ctl-active");
+            let card = card.clone();
+            gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(350), move || {
+                card.remove_css_class("ctl-active");
+            });
+        }
+        self.overlay.queue_draw();
+        let transient = self.transient.clone();
+        let overlay = self.overlay.clone();
         gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(350), move || {
-            container.remove_css_class("ctl-active");
+            *transient.borrow_mut() = None;
+            overlay.queue_draw();
         });
     }
 }

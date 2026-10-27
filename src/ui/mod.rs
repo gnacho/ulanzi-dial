@@ -59,13 +59,22 @@ fn load_css() {
         "
         .ctl-card {
             background: @card_bg_color;
-            border: 1px solid @borders;
-            border-radius: 10px;
-            padding: 6px 8px;
+            border: 1px solid alpha(@borders, 0.7);
+            border-radius: 12px;
+            padding: 7px 9px;
+        }
+        .ctl-card:hover {
+            border-color: alpha(@accent_color, 0.45);
+        }
+        .ctl-card:focus-within,
+        .ctl-card.ctl-selected {
+            border-color: @accent_color;
+            background: alpha(@accent_color, 0.08);
+            box-shadow: 0 0 0 2px alpha(@accent_color, 0.28);
         }
         .ctl-active {
             border-color: @accent_color;
-            box-shadow: 0 0 0 2px alpha(@accent_color, 0.35);
+            box-shadow: 0 0 0 3px alpha(@accent_color, 0.35);
         }
         .ctl-name { font-size: 11px; font-weight: bold; opacity: 0.6; }
         .ctl-mode {
