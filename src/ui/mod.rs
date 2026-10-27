@@ -1,5 +1,6 @@
 //! Ensamblado de la ventana principal y cableado backend ↔ UI.
 
+pub mod chord_dialog;
 pub mod control_map;
 pub mod device_page;
 pub mod general_page;
@@ -9,7 +10,6 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 
@@ -25,7 +25,6 @@ struct Shared {
     executor: RefCell<Option<ActionExecutor>>,
     /// Valor sintético 0-100 para el HUD (volumen/brillo/zoom).
     hud_value: Cell<i32>,
-    enabled: Cell<bool>,
     overlay: adw::ToastOverlay,
     banner: adw::Banner,
 }
@@ -166,7 +165,6 @@ pub fn build_ui(app: &adw::Application) {
         config: Rc::new(RefCell::new(config)),
         executor: RefCell::new(None),
         hud_value: Cell::new(45),
-        enabled: Cell::new(true),
         overlay: overlay.clone(),
         banner: banner.clone(),
     });
@@ -176,24 +174,10 @@ pub fn build_ui(app: &adw::Application) {
         let shared = shared.clone();
         move |msg: String| shared.toast(msg)
     };
-    let device = device_page::DevicePage::new(
-        shared.config.clone(),
-        {
-            let shared = shared.clone();
-            move |msg| shared.toast(msg)
-        },
-        {
-            let shared = shared.clone();
-            move |enabled| {
-                shared.enabled.set(enabled);
-                shared.toast(if enabled {
-                    "Dial habilitado"
-                } else {
-                    "Dial deshabilitado"
-                });
-            }
-        },
-    );
+    let device = device_page::DevicePage::new(shared.config.clone(), {
+        let shared = shared.clone();
+        move |msg| shared.toast(msg)
+    });
     stack.add_titled(&device.borrow().widget, Some("device"), "Dispositivo");
 
     let general = general_page::build(shared.config.clone(), toast_cb);
@@ -245,8 +229,6 @@ pub fn build_ui(app: &adw::Application) {
             }
         });
     }
-
-    window.present();
 }
 
 fn handle_event(
@@ -255,9 +237,6 @@ fn handle_event(
     hud: &Rc<hud::Hud>,
     ev: DialEvent,
 ) {
-    if !shared.enabled.get() {
-        return;
-    }
     let cfg = shared.config.borrow();
 
     match ev {

@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 
@@ -34,7 +33,9 @@ pub fn build(config: Rc<RefCell<Config>>, on_toast: impl Fn(String) + 'static) -
         0,
     );
     sens.set_title("Sensibilidad");
-    sens.set_subtitle("Tamaño del paso por cada diente de la ruleta");
+    sens.set_subtitle(
+        "Solo se aplica a desplazamiento y zoom. El volumen y el brillo van de una en una",
+    );
     sens.set_value(config.borrow().sensitivity as f64);
     {
         let config = config.clone();
@@ -68,7 +69,7 @@ pub fn build(config: Rc<RefCell<Config>>, on_toast: impl Fn(String) + 'static) -
 
     let hud = adw::SwitchRow::new();
     hud.set_title("Mostrar HUD al girar");
-    hud.set_subtitle("Indicador en pantalla con el valor mientras giras la rueda");
+    hud.set_subtitle("Solo sale con el zoom y con el volumen en modo mezclador: el resto ya lo muestra el escritorio con su propio indicador");
     hud.set_active(config.borrow().show_hud);
     {
         let config = config.clone();

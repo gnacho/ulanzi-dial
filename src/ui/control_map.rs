@@ -13,7 +13,6 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 use gtk4 as gtk;
-use libadwaita as adw;
 
 use crate::backend::actions::{self, Action};
 use crate::backend::keymap::ButtonId;
@@ -114,6 +113,21 @@ fn accent(widget: &impl IsA<gtk::Widget>) -> gtk::gdk::RGBA {
 }
 
 /// Crea un desplegable plano con las opciones dadas y el callback de cambio.
+/// Texto del atajo tal como se ensena en la tarjeta. Las teclas multimedia
+/// se leen mejor con su nombre que con el codigo de evdev.
+fn chord_display(combo: &crate::backend::keymap::KeyCombo) -> String {
+    use evdev::Key;
+    let plain = !combo.ctrl && !combo.shift && !combo.alt && !combo.logo;
+    if plain {
+        match combo.key {
+            Key::KEY_PLAYPAUSE => return "Play".to_string(),
+            Key::KEY_MUTE => return "Mudo".to_string(),
+            _ => {}
+        }
+    }
+    combo.label()
+}
+
 fn dropdown(
     options: &'static [(Action, &'static str)],
     current: &Action,
@@ -134,7 +148,7 @@ fn dropdown(
     dd
 }
 
-fn control_card(name: &str, rows: &[(&str, gtk::DropDown)]) -> gtk::Box {
+fn control_card(name: &str, rows: &[(&str, &gtk::Widget)]) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Vertical, 2);
     card.add_css_class("ctl-card");
     card.set_size_request(CARD_W, -1);
@@ -147,13 +161,13 @@ fn control_card(name: &str, rows: &[(&str, gtk::DropDown)]) -> gtk::Box {
     title.set_max_width_chars(1);
     card.append(&title);
 
-    for (mode, dd) in rows {
+    for (mode, widget) in rows {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let chip = gtk::Label::new(Some(mode));
         chip.add_css_class("ctl-mode");
         chip.set_valign(gtk::Align::Center);
         row.append(&chip);
-        row.append(dd);
+        row.append(*widget);
         card.append(&row);
     }
 
@@ -202,7 +216,9 @@ impl ControlMap {
             }
         };
 
-        // Tarjeta de un botón: solo tiene acción de pulsar.
+        // Tarjeta de un botón: solo tiene acción de pulsar. El desplegable
+        // lleva las acciones habituales y, al lado, un botón con el atajo de
+        // teclado actual (o "Atajo…" si la acción no es un atajo).
         let button_card = |id: ButtonId| -> gtk::Box {
             let press_cur = {
                 let c = config.borrow();
@@ -211,12 +227,89 @@ impl ControlMap {
                     None => Action::None,
                 }
             };
-            let press_dd = dropdown(
-                actions::press_options(),
-                &press_cur,
-                mk_binding(&config, id, on_toast.clone()),
-            );
-            control_card(id.label(), &[("Pulsar", press_dd)])
+            let on_change = Rc::new(mk_binding(&config, id, on_toast.clone()));
+
+            let chord_text = match press_cur.shortcut() {
+                Some(combo) => chord_display(&combo),
+                None => "Sin atajo".to_string(),
+            };
+            let chord_known = press_cur.shortcut().is_some();
+            // El botón lleva una etiqueta propia para poder recortarla: el
+            // hueco de la tarjeta es fijo y un atajo largo la ensancharía
+            // hasta pisar la tarjeta vecina.
+            let chord_label = gtk::Label::new(Some(&chord_text));
+            chord_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            chord_label.set_max_width_chars(12);
+            let chord_button = gtk::Button::new();
+            chord_button.add_css_class("flat");
+            chord_button.add_css_class("ctl-chord");
+            chord_button.set_child(Some(&chord_label));
+            chord_button.set_size_request(102, -1);
+            chord_button.set_sensitive(chord_known);
+            chord_button.set_tooltip_text(Some(if chord_known {
+                "Grabar otro atajo de teclado"
+            } else {
+                "Esta acción no se ejecuta con un atajo"
+            }));
+
+            let press_dd = dropdown(actions::press_options(), &press_cur, {
+                let on_change = on_change.clone();
+                let chord_label = chord_label.clone();
+                let chord_button = chord_button.clone();
+                move |action: Action| {
+                    match action.shortcut() {
+                        Some(combo) => {
+                            chord_label.set_label(&chord_display(&combo));
+                            chord_button.set_sensitive(true);
+                            chord_button.set_tooltip_text(Some("Grabar otro atajo de teclado"));
+                        }
+                        None => {
+                            chord_label.set_label("Sin atajo");
+                            chord_button.set_sensitive(false);
+                            chord_button
+                                .set_tooltip_text(Some("Esta acción no se ejecuta con un atajo"));
+                        }
+                    }
+                    on_change(action);
+                }
+            });
+            // Con un atajo guardado el desplegable no tiene una entrada que lo
+            // represente: se deja sin selección y manda el botón de al lado.
+            if matches!(press_cur, Action::Chord(_)) {
+                press_dd.set_selected(gtk::INVALID_LIST_POSITION);
+            }
+
+            {
+                let on_change = on_change.clone();
+                let chord_label_weak = chord_label.downgrade();
+                let chord_button_weak = chord_button.downgrade();
+                let start = match &press_cur {
+                    Action::Chord(value) => Some(value.clone()),
+                    _ => None,
+                };
+                chord_button.connect_clicked(move |btn| {
+                    let parent = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+                    let on_change = on_change.clone();
+                    let chord_label_weak = chord_label_weak.clone();
+                    let chord_button_weak = chord_button_weak.clone();
+                    let start = start.clone();
+                    super::chord_dialog::present(parent.as_ref(), start.as_deref(), move |chord| {
+                        if let Some(label) = chord_label_weak.upgrade() {
+                            label.set_label(&chord);
+                        }
+                        if let Some(button) = chord_button_weak.upgrade() {
+                            button.set_tooltip_text(Some(&chord));
+                        }
+                        on_change(Action::Chord(chord));
+                    });
+                });
+            }
+
+            press_dd.set_size_request(100, -1);
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            row.append(&press_dd);
+            row.append(&chord_button);
+            control_card(id.label(), &[("Pulsar", row.upcast_ref::<gtk::Widget>())])
         };
 
         for id in [
@@ -270,7 +363,7 @@ impl ControlMap {
                 }
                 toast(format!("{} → {}", name, action.label()));
             });
-            let card = control_card(name, &[("Acción", dd)]);
+            let card = control_card(name, &[("Acción", dd.upcast_ref::<gtk::Widget>())]);
             cards.borrow_mut().insert(*hl, card);
         }
 

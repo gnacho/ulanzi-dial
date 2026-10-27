@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 
@@ -15,7 +14,6 @@ pub struct DevicePage {
     pub widget: gtk::Box,
     pub map: ControlMap,
     status_subtitle: gtk::Label,
-    enable_switch: gtk::Switch,
     connected: bool,
     battery: Option<u8>,
 }
@@ -24,7 +22,6 @@ impl DevicePage {
     pub fn new(
         config: Rc<RefCell<Config>>,
         on_toast: impl Fn(String) + 'static,
-        on_enabled_changed: impl Fn(bool) + 'static,
     ) -> Rc<RefCell<Self>> {
         let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
         page.set_margin_start(18);
@@ -45,10 +42,6 @@ impl DevicePage {
         subtitle.add_css_class("dim-label");
         row.add_suffix(&subtitle);
 
-        let switch = gtk::Switch::new();
-        switch.set_active(true);
-        switch.set_valign(gtk::Align::Center);
-        row.add_suffix(&switch);
         status_group.add(&row);
         page.append(&status_group);
 
@@ -61,8 +54,8 @@ impl DevicePage {
         page.append(&title);
 
         let desc = gtk::Label::new(Some(
-            "Pulsar es el atajo del botón; Girar es lo que hace la rueda \
-             mientras lo mantienes pulsado. Los cambios se guardan al instante.",
+            "Pulsar es la acción del botón. La rueda siempre hace lo suyo: el firmware \
+             no manda giros mientras mantienes un botón. Los cambios se guardan al instante.",
         ));
         desc.set_xalign(0.0);
         desc.set_wrap(true);
@@ -78,15 +71,9 @@ impl DevicePage {
             widget: page,
             map,
             status_subtitle: subtitle,
-            enable_switch: switch.clone(),
             connected: false,
             battery: None,
         }));
-
-        switch.connect_state_set(move |_, enabled| {
-            on_enabled_changed(enabled);
-            gtk::glib::Propagation::Proceed
-        });
 
         page_handle
     }
@@ -111,12 +98,5 @@ impl DevicePage {
             "Desconectado".to_string()
         };
         self.status_subtitle.set_text(&text);
-    }
-
-    pub fn set_controls_sensitive(&self, sensitive: bool) {
-        self.map.widget.set_sensitive(sensitive);
-        self.map
-            .widget
-            .set_opacity(if sensitive { 1.0 } else { 0.45 });
     }
 }
