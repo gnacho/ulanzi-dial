@@ -16,7 +16,7 @@ use libadwaita as adw;
 use crate::backend::actions::{Action, ActionExecutor};
 use crate::backend::decoder::DialEvent;
 use crate::backend::device::{self, BackendMsg, ReaderConfig};
-use crate::config::Config;
+use crate::config::{Config, VolumeMode};
 use control_map::Highlight;
 
 /// Estado compartido entre la UI y el reenviador de eventos del backend.
@@ -281,15 +281,24 @@ fn handle_event(
                 detents
             };
             let volume_step = cfg.volume_step;
+            let volume_mode = cfg.volume_mode;
             let show_hud = cfg.show_hud;
             drop(cfg);
 
             let measured = shared
-                .with_executor(|exec| exec.rotate(&action, amount, volume_step))
+                .with_executor(|exec| exec.rotate(&action, amount, volume_mode, volume_step))
                 .flatten();
 
-            // HUD para acciones con valor 0-100
-            if show_hud && matches!(action, Action::Volume | Action::Brightness | Action::Zoom) {
+            // El escritorio ya pinta su propio OSD cuando mandamos las teclas
+            // de volumen o brillo, así que el HUD solo hace falta cuando el
+            // valor no lo muestra nadie (zoom y volumen por mezclador).
+            let wants_hud = show_hud
+                && match action {
+                    Action::Zoom => true,
+                    Action::Volume => volume_mode == VolumeMode::Mixer,
+                    _ => false,
+                };
+            if wants_hud {
                 let v = match measured {
                     // Volumen: el valor real que devuelve el mezclador.
                     Some(real) => real as i32,

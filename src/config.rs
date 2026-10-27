@@ -19,12 +19,30 @@ pub struct ControlBinding {
     pub spin: Action,
 }
 
+/// Cómo se aplica el volumen al girar la rueda.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VolumeMode {
+    /// Teclas multimedia: el escritorio pinta su propio OSD y aplica su salto.
+    Keys,
+    /// Mezclador de audio (wpctl/pactl): salto `volume_step`, sin OSD del escritorio.
+    Mixer,
+}
+
+impl Default for VolumeMode {
+    fn default() -> Self {
+        Self::Keys
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     /// Muescas por evento en las acciones continuas (scroll, zoom).
     pub sensitivity: u8,
-    /// Salto de volumen en tanto por ciento por muesca de la rueda.
+    /// Cómo se aplica el volumen de la rueda.
+    pub volume_mode: VolumeMode,
+    /// Salto de volumen en tanto por ciento por muesca (solo `volume_mode = "mixer"`).
     pub volume_step: u8,
     pub invert: bool,
     pub long_press_ms: u64,
@@ -119,6 +137,7 @@ impl Default for Config {
         );
         Self {
             sensitivity: 5,
+            volume_mode: VolumeMode::Keys,
             volume_step: 3,
             invert: false,
             long_press_ms: 750,
@@ -217,6 +236,15 @@ mod tests {
         assert!(cfg.invert);
         assert_eq!(cfg.long_press_ms, 750); // default rellenado
         assert_eq!(cfg.buttons.len(), 7); // default rellenado
+        assert_eq!(cfg.volume_mode, VolumeMode::Keys);
+    }
+
+    #[test]
+    fn parses_volume_mode() {
+        let cfg: Config = toml::from_str("volume_mode = \"mixer\"").expect("parse");
+        assert_eq!(cfg.volume_mode, VolumeMode::Mixer);
+        let cfg: Config = toml::from_str("volume_mode = \"keys\"").expect("parse");
+        assert_eq!(cfg.volume_mode, VolumeMode::Keys);
     }
 
     #[test]

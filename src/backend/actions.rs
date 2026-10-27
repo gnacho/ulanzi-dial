@@ -9,6 +9,8 @@ use evdev::uinput::VirtualDevice;
 use evdev::{AttributeSet, EventType, InputEvent, Key, RelativeAxisType};
 use serde::{Deserialize, Serialize};
 
+use crate::config::VolumeMode;
+
 /// Acción asignable a un gesto. Se serializa en kebab-case en el config.toml.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -238,13 +240,36 @@ impl ActionExecutor {
     ///
     /// Devuelve el volumen real resultante (0-100) cuando la acción es
     /// `Volume` y hay mezclador, para que el HUD muestre la verdad.
-    pub fn rotate(&mut self, action: &Action, steps: i32, volume_step: u8) -> Option<u8> {
+    pub fn rotate(
+        &mut self,
+        action: &Action,
+        steps: i32,
+        volume_mode: VolumeMode,
+        volume_step: u8,
+    ) -> Option<u8> {
         let dir = steps.signum();
         if dir == 0 {
             return None;
         }
         match action {
-            Action::Volume => return self.change_volume(steps * volume_step as i32),
+            Action::Volume => {
+                return match volume_mode {
+                    // Teclas multimedia: el escritorio aplica su propio salto y
+                    // pinta su OSD nativo. Una pulsación por muesca.
+                    VolumeMode::Keys => {
+                        let key = if dir > 0 {
+                            Key::KEY_VOLUMEUP
+                        } else {
+                            Key::KEY_VOLUMEDOWN
+                        };
+                        for _ in 0..steps.abs() {
+                            self.tap_key(key);
+                        }
+                        None
+                    }
+                    VolumeMode::Mixer => self.change_volume(steps * volume_step as i32),
+                };
+            }
             // Brillo y pista van de uno en uno: multiplicarlos por la
             // sensibilidad convertía cada muesca en un salto enorme.
             Action::Brightness => {

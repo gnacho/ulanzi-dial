@@ -116,16 +116,19 @@ top-center = "Ctrl+C"
 #         side-left-upper, side-left-lower, side-right-upper, side-right-lower
 ```
 
-## Volumen fino (opcional)
+## Volumen
 
-Las teclas multimedia del escritorio mueven el volumen en saltos fijos (~6% en GNOME), así que el dial habla directamente con PipeWire (`wpctl`) o PulseAudio (`pactl`) y aplica el salto que le digas. Si no encuentra ninguno de los dos, vuelve a las teclas de siempre.
+Por defecto la rueda manda las teclas de volumen del sistema, así que se ve el OSD nativo del escritorio y el salto es el que tenga configurado (6% en GNOME, ajustable con `gsettings set org.gnome.settings-daemon.plugins.media-keys volume-step 3`).
+
+Si prefieres un salto propio y no te importa perder el OSD del escritorio, el dial puede hablar directamente con PipeWire (`wpctl`) o PulseAudio (`pactl`) y aplicar el salto que le digas:
 
 ```toml
-volume_step = 3   # puntos de volumen por muesca (1-10; por defecto 3)
-sensitivity = 5   # solo afecta a scroll, scroll horizontal y zoom
+volume_mode = "mixer"   # "keys" (por defecto) o "mixer"
+volume_step = 3         # puntos de volumen por muesca, solo en modo mixer
+sensitivity = 5         # solo afecta a scroll, scroll horizontal y zoom
 ```
 
-El HUD muestra el volumen real que devuelve el mezclador, no un contador interno. La sensibilidad no multiplica el volumen ni el cambio de pista: era lo que hacía que una muesca saltara 30 puntos.
+En modo `mixer` el HUD de la app muestra el volumen real que devuelve el mezclador, no un contador interno. Con `keys` el HUD no se muestra para el volumen porque el OSD del escritorio ya lo hace. La sensibilidad no multiplica el volumen ni el cambio de pista: era lo que hacía que una muesca saltara 30 puntos.
 
 ## Estructura
 
