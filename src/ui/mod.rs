@@ -117,8 +117,9 @@ pub fn build_ui(app: &adw::Application) {
     // --- ventana ---
     let window = adw::ApplicationWindow::new(app);
     window.set_title(Some("Ulanzi Dial"));
-    window.set_default_size(700, 860);
-    window.set_resizable(false); // el mapa usa geometría fija en v1
+    // Ancha y no demasiado alta: tres columnas y tres filas de tarjetas.
+    window.set_default_size(1020, 760);
+    window.set_resizable(false); // el mapa se compone en un Grid de tamaño fijo
 
     let toolbar = adw::ToolbarView::new();
     let header = adw::HeaderBar::new();
@@ -190,9 +191,12 @@ pub fn build_ui(app: &adw::Application) {
     let general = general_page::build(shared.config.clone(), toast_cb);
     stack.add_titled(&general, Some("general"), "General");
 
+    // Alto fijo: el contenido se compone a tamaño constante; si algún tema lo
+    // agranda, el scrolled absorbe la diferencia en vertical sin recortar.
     let scrolled = gtk::ScrolledWindow::new();
     scrolled.set_child(Some(&stack));
-    scrolled.set_propagate_natural_height(true);
+    scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    scrolled.set_vexpand(true);
     overlay.set_child(Some(&scrolled));
 
     // banner "Buscar": fuerza reescaneo inmediato (el hilo ya reescanea cada 1 s)
