@@ -16,7 +16,11 @@ pub struct Hud {
     action_label: gtk::Label,
     value_label: gtk::Label,
     bar: gtk::LevelBar,
-    hide_source: Rc<Cell<Option<gtk::glib::SourceId>>>,
+    /// Generación del temporizador de ocultado. Cada `show()` la incrementa y
+    /// el temporizador solo esconde el HUD si sigue siendo el suyo. Así no hay
+    /// que borrar el `SourceId` (un `timeout_add_local_once` ya disparado no se
+    /// puede eliminar: `SourceId::remove` hace panic).
+    hide_gen: Rc<Cell<u64>>,
 }
 
 impl Hud {
@@ -50,7 +54,7 @@ impl Hud {
             action_label,
             value_label,
             bar,
-            hide_source: Rc::new(Cell::new(None)),
+            hide_gen: Rc::new(Cell::new(0)),
         })
     }
 
@@ -63,14 +67,13 @@ impl Hud {
             self.window.present();
         }
 
-        if let Some(id) = self.hide_source.take() {
-            id.remove();
-        }
+        let gen = self.hide_gen.get() + 1;
+        self.hide_gen.set(gen);
         let hud = self.clone();
-        let id =
-            gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
+        gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
+            if hud.hide_gen.get() == gen {
                 hud.window.set_visible(false);
-            });
-        self.hide_source.set(Some(id));
+            }
+        });
     }
 }
