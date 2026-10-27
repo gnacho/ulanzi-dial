@@ -180,7 +180,28 @@ pub fn build_ui(app: &adw::Application) {
     });
     stack.add_titled(&device.borrow().widget, Some("device"), "Dispositivo");
 
-    let general = general_page::build(shared.config.clone(), toast_cb);
+    // Perfiles por aplicación: la extensión de GNOME publica la ventana activa.
+    {
+        let shared = shared.clone();
+        let device = device.clone();
+        crate::backend::focus::spawn_watcher(move |app| {
+            let changed = shared.config.borrow_mut().set_active_app(app);
+            if !changed {
+                return;
+            }
+            device.borrow().map.refresh();
+            let key = shared.config.borrow().current_profile_key().cloned();
+            match key {
+                Some(name) => shared.toast(format!("Perfil: {name}")),
+                None => shared.toast("Perfil global".to_string()),
+            }
+        });
+    }
+
+    let general = general_page::build(shared.config.clone(), toast_cb, {
+        let device = device.clone();
+        move || device.borrow().map.refresh()
+    });
     stack.add_titled(&general, Some("general"), "General");
 
     // Alto fijo: el contenido se compone a tamaño constante; si algún tema lo

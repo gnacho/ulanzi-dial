@@ -87,6 +87,9 @@ pub struct ControlMap {
     selected: Rc<RefCell<Option<Highlight>>>,
     transient: Rc<RefCell<Option<Highlight>>>,
     overlay: gtk::DrawingArea,
+    config: Rc<RefCell<Config>>,
+    dropdowns: Rc<RefCell<HashMap<ButtonId, gtk::DropDown>>>,
+    chord_ui: Rc<RefCell<HashMap<ButtonId, (gtk::Button, gtk::Label)>>>,
 }
 
 fn texture(bytes: &'static [u8]) -> gtk::gdk::Texture {
@@ -254,6 +257,10 @@ impl ControlMap {
         let selected: Rc<RefCell<Option<Highlight>>> = Rc::new(RefCell::new(None));
         let transient: Rc<RefCell<Option<Highlight>>> = Rc::new(RefCell::new(None));
         let links: Rc<RefCell<Vec<Link>>> = Rc::new(RefCell::new(Vec::new()));
+        let dropdowns: Rc<RefCell<HashMap<ButtonId, gtk::DropDown>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+        let chord_ui: Rc<RefCell<HashMap<ButtonId, (gtk::Button, gtk::Label)>>> =
+            Rc::new(RefCell::new(HashMap::new()));
 
         let on_toast = Rc::new(on_toast);
         let mk_binding = |cfg: &Rc<RefCell<Config>>, id: ButtonId, toast: Rc<dyn Fn(String)>| {
@@ -262,13 +269,7 @@ impl ControlMap {
             move |action: Action| {
                 {
                     let mut c = cfg.borrow_mut();
-                    let binding =
-                        c.buttons
-                            .entry(id)
-                            .or_insert_with(|| crate::config::ControlBinding {
-                                press: Action::None,
-                            });
-                    binding.press = action.clone();
+                    c.set_press(id, action.clone());
                     c.save();
                 }
                 toast(format!("{label} → {}", action.label()));
@@ -279,13 +280,7 @@ impl ControlMap {
         // lleva las acciones habituales y, al lado, un botón con el atajo de
         // teclado actual (o "Atajo…" si la acción no es un atajo).
         let button_card = |id: ButtonId| -> gtk::Box {
-            let press_cur = {
-                let c = config.borrow();
-                match c.buttons.get(&id) {
-                    Some(b) => b.press.clone(),
-                    None => Action::None,
-                }
-            };
+            let press_cur = config.borrow().press_for(id);
             let on_change = Rc::new(mk_binding(&config, id, on_toast.clone()));
 
             let chord_text = match press_cur.shortcut() {
@@ -337,6 +332,10 @@ impl ControlMap {
             if matches!(press_cur, Action::Chord(_)) {
                 press_dd.set_selected(gtk::INVALID_LIST_POSITION);
             }
+            dropdowns.borrow_mut().insert(id, press_dd.clone());
+            chord_ui
+                .borrow_mut()
+                .insert(id, (chord_button.clone(), chord_label.clone()));
 
             {
                 let on_change = on_change.clone();
@@ -556,10 +555,40 @@ impl ControlMap {
             selected,
             transient,
             overlay,
+            config,
+            dropdowns,
+            chord_ui,
         }
     }
 
     /// Resalta brevemente la tarjeta del control que generó un evento real.
+    /// Relee las asignaciones de la configuración y repinta las tarjetas.
+    /// Se llama cuando cambia el perfil (aplicación activa o perfil fijado).
+    pub fn refresh(&self) {
+        let cfg = self.config.borrow();
+        for (id, dd) in self.dropdowns.borrow().iter() {
+            let action = cfg.press_for(*id);
+            dd.set_selected(actions::index_of(actions::press_options(), &action));
+            if matches!(action, Action::Chord(_)) {
+                dd.set_selected(gtk::INVALID_LIST_POSITION);
+            }
+            if let Some((button, label)) = self.chord_ui.borrow().get(id) {
+                match action.shortcut() {
+                    Some(combo) => {
+                        label.set_label(&chord_display(&combo));
+                        button.set_sensitive(true);
+                        button.set_tooltip_text(Some("Grabar otro atajo de teclado"));
+                    }
+                    None => {
+                        label.set_label("Sin atajo");
+                        button.set_sensitive(false);
+                        button.set_tooltip_text(Some("Esta acción no se ejecuta con un atajo"));
+                    }
+                }
+            }
+        }
+    }
+
     pub fn highlight(&self, target: Highlight) {
         *self.transient.borrow_mut() = Some(target);
         if let Some(card) = self.cards.borrow().get(&target) {

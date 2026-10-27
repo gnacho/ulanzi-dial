@@ -60,9 +60,14 @@ pub struct Config {
     /// Perfiles por aplicación (conmutación automática: pendiente de
     /// foreign-toplevel en Wayland; por ahora se aplican manualmente).
     pub profiles: HashMap<String, Profile>,
+    /// Perfil fijado a mano en la pestaña General; manda sobre la app activa.
+    pub pinned_profile: Option<String>,
+    /// Perfil impuesto por la ventana activa. No se guarda en el fichero.
+    #[serde(skip)]
+    pub active_profile: Option<String>,
 }
 
-/// Un perfil completo de asignaciones (futuro: activado por ventana activa).
+/// Asignaciones propias de una aplicación concreta.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Profile {
@@ -137,7 +142,56 @@ impl Default for Config {
             buttons,
             keymap: HashMap::new(),
             profiles: HashMap::new(),
+            pinned_profile: None,
+            active_profile: None,
         }
+    }
+}
+
+impl Config {
+    /// Clave del perfil que manda ahora mismo: el fijado a mano o el de la app activa.
+    pub fn current_profile_key(&self) -> Option<&String> {
+        self.pinned_profile
+            .as_ref()
+            .or(self.active_profile.as_ref())
+    }
+
+    pub fn current_profile(&self) -> Option<&Profile> {
+        self.current_profile_key()
+            .and_then(|key| self.profiles.get(key))
+    }
+
+    /// Acción efectiva de un botón: la del perfil activo si la tiene, si no la global.
+    pub fn press_for(&self, id: ButtonId) -> Action {
+        self.current_profile()
+            .and_then(|profile| profile.buttons.get(&id))
+            .map(|binding| binding.press.clone())
+            .unwrap_or_else(|| {
+                self.buttons
+                    .get(&id)
+                    .map(|binding| binding.press.clone())
+                    .unwrap_or(Action::None)
+            })
+    }
+
+    /// Guarda la acción de un botón en el perfil activo, creándolo si hace falta.
+    pub fn set_press(&mut self, id: ButtonId, action: Action) {
+        match self.current_profile_key().cloned() {
+            Some(key) => {
+                let profile = self.profiles.entry(key).or_default();
+                profile.buttons.insert(id, ControlBinding { press: action });
+            }
+            None => {
+                self.buttons.insert(id, ControlBinding { press: action });
+            }
+        }
+    }
+
+    /// Fija la aplicación activa. Devuelve true si cambió el perfil efectivo.
+    pub fn set_active_app(&mut self, app: Option<String>) -> bool {
+        let before = self.current_profile_key().cloned();
+        self.active_profile = app.filter(|app| self.profiles.contains_key(app));
+        self.current_profile_key().cloned() != before
     }
 }
 
@@ -252,5 +306,58 @@ mod tests {
             action_from_str("command:notify-send hola"),
             Action::Command("notify-send hola".into())
         );
+    }
+
+    #[test]
+    fn profile_overrides_and_falls_back() {
+        let mut cfg = Config::default();
+        cfg.profiles.insert("firefox".into(), Profile::default());
+        assert_eq!(cfg.press_for(ButtonId::TopLeft), Action::Undo);
+
+        assert!(cfg.set_active_app(Some("firefox".into())));
+        assert_eq!(cfg.press_for(ButtonId::TopLeft), Action::Undo);
+
+        cfg.set_press(ButtonId::TopLeft, Action::Redo);
+        assert_eq!(cfg.press_for(ButtonId::TopLeft), Action::Redo);
+        assert_eq!(
+            cfg.buttons.get(&ButtonId::TopLeft).map(|b| b.press.clone()),
+            Some(Action::Undo),
+            "la asignación global no cambia"
+        );
+
+        assert!(cfg.set_active_app(None));
+        assert_eq!(cfg.press_for(ButtonId::TopLeft), Action::Undo);
+    }
+
+    #[test]
+    fn unknown_app_is_ignored() {
+        let mut cfg = Config::default();
+        assert!(!cfg.set_active_app(Some("not-a-profile".into())));
+        assert_eq!(cfg.current_profile_key(), None);
+        assert_eq!(cfg.press_for(ButtonId::TopLeft), Action::Undo);
+    }
+
+    #[test]
+    fn pinned_profile_wins_over_active() {
+        let mut cfg = Config::default();
+        cfg.profiles.insert("a".into(), Profile::default());
+        cfg.profiles.insert("b".into(), Profile::default());
+        cfg.set_active_app(Some("a".into()));
+        cfg.pinned_profile = Some("b".into());
+        assert_eq!(cfg.current_profile_key().map(String::as_str), Some("b"));
+
+        cfg.set_press(ButtonId::TopCenter, Action::Mute);
+        assert_eq!(
+            cfg.profiles
+                .get("b")
+                .and_then(|p| p.buttons.get(&ButtonId::TopCenter))
+                .map(|b| b.press.clone()),
+            Some(Action::Mute)
+        );
+        assert!(cfg
+            .profiles
+            .get("a")
+            .and_then(|p| p.buttons.get(&ButtonId::TopCenter))
+            .is_none());
     }
 }

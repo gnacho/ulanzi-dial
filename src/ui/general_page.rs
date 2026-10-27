@@ -9,7 +9,11 @@ use libadwaita as adw;
 
 use crate::config::Config;
 
-pub fn build(config: Rc<RefCell<Config>>, on_toast: impl Fn(String) + 'static) -> gtk::Widget {
+pub fn build(
+    config: Rc<RefCell<Config>>,
+    on_toast: impl Fn(String) + 'static,
+    on_profile_changed: impl Fn() + 'static,
+) -> gtk::Widget {
     let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
     page.set_margin_start(18);
     page.set_margin_end(18);
@@ -118,20 +122,50 @@ pub fn build(config: Rc<RefCell<Config>>, on_toast: impl Fn(String) + 'static) -
     grp_profile.set_title("Perfil");
     let profile_row = adw::ComboRow::new();
     profile_row.set_title("Aplicación");
-    profile_row
-        .set_subtitle("La conmutación automática por ventana activa llegará en una versión futura");
-    let model = gtk::StringList::new(&["Global", "Firefox", "Kdenlive", "GIMP", "Inkscape"]);
+    profile_row.set_subtitle(
+        "Global usa las asignaciones de la pestaña Dispositivo. Con una aplicación elegida, \
+         los cambios se guardan solo en su perfil.",
+    );
+
+    let mut labels: Vec<String> = vec!["Global".to_string()];
+    let mut keys: Vec<String> = Vec::new();
+    {
+        let c = config.borrow();
+        let mut names: Vec<&String> = c.profiles.keys().collect();
+        names.sort();
+        for name in names {
+            labels.push(name.clone());
+            keys.push(name.clone());
+        }
+    }
+    let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+    let model = gtk::StringList::new(&refs);
     profile_row.set_model(Some(&model));
-    profile_row.set_selected(0);
+
+    let pinned = config.borrow().pinned_profile.clone();
+    let selected = pinned
+        .and_then(|p| keys.iter().position(|k| *k == p))
+        .map(|i| i as u32 + 1)
+        .unwrap_or(0);
+    profile_row.set_selected(selected);
     {
         let toast = on_toast.clone();
+        let refresh = on_profile_changed;
         profile_row.connect_selected_notify(move |row| {
             let idx = row.selected();
-            let names = ["Global", "Firefox", "Kdenlive", "GIMP", "Inkscape"];
-            if let Some(name) = names.get(idx as usize) {
-                toast(format!(
-                    "Perfil activo: {name} (asignaciones por perfil: pendiente)"
-                ));
+            let key = if idx == 0 {
+                None
+            } else {
+                keys.get(idx as usize - 1).cloned()
+            };
+            let mut c = config.borrow_mut();
+            c.pinned_profile = key.clone();
+            c.save();
+            drop(c);
+            refresh();
+            match key {
+                Some(name) => toast(format!("Perfil fijado: {name}")),
+                None => toast("Perfil global".to_string()),
             }
         });
     }

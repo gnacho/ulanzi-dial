@@ -130,6 +130,26 @@ sensitivity = 5         # solo afecta a scroll, scroll horizontal y zoom
 
 En modo `mixer` el HUD de la app muestra el volumen real que devuelve el mezclador, no un contador interno. Con `keys` el HUD no se muestra para el volumen porque el OSD del escritorio ya lo hace. La sensibilidad no multiplica el volumen ni el cambio de pista: era lo que hacía que una muesca saltara 30 puntos.
 
+## Perfiles por aplicación
+
+Cada aplicación puede tener sus propias asignaciones para los siete botones. La rueda (girar y pulsar) es siempre global: volumen y silencio tienen el mismo sentido en todas partes.
+
+Crear un perfil es implícito: con la aplicación en primer plano, cambia una asignación en la pestaña Dispositivo y se guarda en el perfil de esa aplicación. Los botones que no toques siguen usando la asignación global.
+
+Para que la app sepa qué ventana está activa hace falta una extensión de GNOME Shell, porque GNOME no permite a un programa normal consultarlo (la API de introspección de Mutter responde `AccessDenied` y Mutter no implementa `wlr-foreign-toplevel-management`):
+
+```bash
+mkdir -p ~/.local/share/gnome-shell/extensions/ulanzi-dial-focus@gnacho
+cp gnome-extension/metadata.json gnome-extension/extension.js \
+   ~/.local/share/gnome-shell/extensions/ulanzi-dial-focus@gnacho/
+# actívala en la app Extensiones, o:
+gnome-extensions enable ulanzi-dial-focus@gnacho
+```
+
+La extensión publica el identificador de la aplicación enfocada en el bus `dev.ulanzi.Dial.Focus`. Tras instalarla hay que cerrar y abrir sesión: en Wayland no se puede recargar GNOME Shell en caliente. Si la extensión no está o está desactivada, la app funciona igual y se queda en el perfil global, sin errores.
+
+En la pestaña General puedes fijar un perfil a mano (`Global` o el de una aplicación concreta). El perfil fijado manda sobre la ventana activa.
+
 ## Estructura
 
 ```
@@ -140,14 +160,17 @@ src/
     keymap.rs        códigos físicos → identidad lógica (testeado)
     decoder.rs       eventos crudos → gestos semánticos (testeado)
     device.rs        evdev: detección, grab exclusivo, hotplug, batería
+    focus.rs         sondeo D-Bus de la ventana activa (extensión de GNOME)
     actions.rs       ejecutor uinput + opciones de la UI (testeado)
   ui/
     mod.rs           ventana, ViewSwitcher, banner, toasts, cableado
     device_page.rs   pestaña Dispositivo (estado + mapa)
     control_map.rs   mapa OpenLogi (foto + líneas + tarjetas)
     general_page.rs  pestaña General (ruleta, comportamiento, perfil)
+    chord_dialog.rs  diálogo de captura de atajos de teclado
     hud.rs           indicador en pantalla
 assets/              foto frontal del D100H
+gnome-extension/     extensión que publica la ventana activa
 udev/                regla udev para permisos de input
 ```
 
@@ -156,10 +179,9 @@ udev/                regla udev para permisos de input
 - **Wayland**: el HUD es una ventana pequeña normal (sin `gtk4-layer-shell` no
   hay overlay real). Migrar el HUD a layer-shell es el primer candidato de
   mejora.
-- **Perfiles por aplicación**: la UI ya muestra el selector, pero la
-  conmutación automática requiere `foreign-toplevel-management` (Wayland) y
-  llegará después; de momento es manual.
-- **Ventana de tamaño fijo** (700×860): el mapa usa geometría fija en v1.
+- **Perfiles por aplicación**: necesitan la extensión de GNOME (ver arriba),
+  porque GNOME no expone la ventana activa a programas normales.
+- **Ventana de tamaño fijo** (1020×760): el mapa usa geometría fija en v1.
 - **Batería**: lectura best-effort del nodo `ABS_MISC` hermano (rango 0-255).
   Si el firmware no la expone limpiamente, simplemente no se muestra.
 - UI en gtk4-rs imperativo; estructura pensada para migrar a **relm4**.

@@ -1,0 +1,8 @@
+{
+  "uuid": "ulanzi-dial-focus@gnacho",
+  "name": "Ulanzi Dial Focus",
+  "description": "Publishes the identifier of the focused window over D-Bus so Ulanzi Dial can switch profiles per application.",
+  "shell-version": ["45", "46", "47", "48", "49", "50", "51"],
+  "url": "https://github.com/gnacho/ulanzi-dial",
+  "version": 1
+}

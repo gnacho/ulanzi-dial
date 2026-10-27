@@ -7,4 +7,5 @@
 pub mod actions;
 pub mod decoder;
 pub mod device;
+pub mod focus;
 pub mod keymap;
