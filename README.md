@@ -74,20 +74,39 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 Cierra sesión y vuelve a entrar (o reinicia) para que surta efecto.
 
-## Verificar el mapa de teclas de TU D100H
+## Mapa de teclas del D100H
 
-El mapa por defecto viene del análisis del firmware de fábrica
-(AetherSDR #3232): rueda = `KEY_NEXTSONG`/`KEY_PREVIOUSSONG`, pulsación =
-`KEY_PLAYPAUSE`, botones = `Ctrl+Z/Y/V` (3 confirmados) y 4 provisionales.
+El mapa por defecto está medido en un D100H real (capturando evdev en
+exclusiva, 27-Oct-2026):
 
-Con el dial emparejado:
+| Control | Código que emite |
+|---|---|
+| Rueda a la derecha | `KEY_VOLUMEUP` |
+| Rueda a la izquierda | `KEY_VOLUMEDOWN` |
+| Pulsar la rueda | `KEY_MUTE` |
+| Superior izquierdo | `KEY_PREVIOUSSONG` |
+| Superior central | `KEY_PLAYPAUSE` |
+| Superior derecho | `KEY_NEXTSONG` |
+| Lateral izquierdo arriba | `Ctrl+V` |
+| Lateral izquierdo abajo | `Ctrl+C` |
+| Lateral derecho arriba | `Ctrl+Y` |
+| Lateral derecho abajo | `Ctrl+Z` |
+
+Dos particularidades de este firmware:
+
+- Suelta Ctrl antes que la letra del combo (el decoder resuelve la liberación
+  por la tecla, no por el estado de Ctrl).
+- No informa de una pulsación mantenida en la rueda: manda pulsación y
+  liberación seguidas, así que la acción de pulsación larga no llega a
+  dispararse.
+
+Con el dial emparejado puedes comprobar el mapa en tu unidad:
 
 ```bash
 evtest   # elige el dispositivo "Ulanzi Dial Keyboard"
 ```
 
-Pulsa cada botón y anota el acorde. Si difiere del mapa por defecto, edita
-`~/.config/ulanzi-dial/config.toml`:
+Si tu unidad difiere, edita `~/.config/ulanzi-dial/config.toml`:
 
 ```toml
 [keymap]

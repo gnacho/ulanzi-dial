@@ -1,10 +1,13 @@
 //! Tabla de códigos físicos del D100H → identidad lógica de cada control.
 //!
-//! Valores por defecto tomados del análisis de AetherSDR (#3232) del firmware
-//! de fábrica del Ulanzi Dial. El D100H tiene 7 botones (3 superiores +
-//! 2 por lado); los tres combos documentados son Ctrl+Z / Ctrl+Y / Ctrl+V.
-//! Los cuatro restantes son provisionales — confírmalos con `evtest` y
-//! ajústalos sin recompilar en `[keymap]` del config.toml.
+//! Valores medidos en un D100H real (27-Oct-2026) capturando evdev en
+//! exclusiva: la rueda emite volumen, la pulsación emite mute y los tres
+//! botones superiores emiten teclas multimedia. El análisis del firmware de
+//! AetherSDR (#3232) que traía el mockup no coincidía con el aparato.
+//!
+//! El firmware suelta Ctrl antes que la letra del combo, y no informa de una
+//! pulsación mantenida en la rueda: la pulsación larga no se puede detectar
+//! por eventos, solo por tiempo mientras no llegue la liberación.
 
 use evdev::Key;
 use serde::{Deserialize, Serialize};
@@ -64,23 +67,45 @@ pub struct KeyMap {
 impl Default for KeyMap {
     fn default() -> Self {
         Self {
-            rotate_cw: Key::KEY_NEXTSONG,
-            rotate_ccw: Key::KEY_PREVIOUSSONG,
-            dial_press: Key::KEY_PLAYPAUSE,
+            rotate_cw: Key::KEY_VOLUMEUP,
+            rotate_ccw: Key::KEY_VOLUMEDOWN,
+            dial_press: Key::KEY_MUTE,
             buttons: vec![
-                // Confirmados por evtest en AetherSDR #3232
+                // Medidos en el aparato: la franja superior emite multimedia.
+                (
+                    ButtonId::TopLeft,
+                    KeyCombo {
+                        ctrl: false,
+                        key: Key::KEY_PREVIOUSSONG,
+                    },
+                ),
+                (
+                    ButtonId::TopCenter,
+                    KeyCombo {
+                        ctrl: false,
+                        key: Key::KEY_PLAYPAUSE,
+                    },
+                ),
+                (
+                    ButtonId::TopRight,
+                    KeyCombo {
+                        ctrl: false,
+                        key: Key::KEY_NEXTSONG,
+                    },
+                ),
+                // Los cuatro laterales emiten combos con Ctrl.
                 (
                     ButtonId::SideLeftUpper,
                     KeyCombo {
                         ctrl: true,
-                        key: Key::KEY_Z,
+                        key: Key::KEY_V,
                     },
                 ),
                 (
                     ButtonId::SideLeftLower,
                     KeyCombo {
                         ctrl: true,
-                        key: Key::KEY_V,
+                        key: Key::KEY_C,
                     },
                 ),
                 (
@@ -90,33 +115,11 @@ impl Default for KeyMap {
                         key: Key::KEY_Y,
                     },
                 ),
-                // Provisionales (TODO: confirmar con evtest en el D100H)
-                (
-                    ButtonId::TopLeft,
-                    KeyCombo {
-                        ctrl: true,
-                        key: Key::KEY_X,
-                    },
-                ),
-                (
-                    ButtonId::TopCenter,
-                    KeyCombo {
-                        ctrl: true,
-                        key: Key::KEY_C,
-                    },
-                ),
-                (
-                    ButtonId::TopRight,
-                    KeyCombo {
-                        ctrl: true,
-                        key: Key::KEY_B,
-                    },
-                ),
                 (
                     ButtonId::SideRightLower,
                     KeyCombo {
                         ctrl: true,
-                        key: Key::KEY_N,
+                        key: Key::KEY_Z,
                     },
                 ),
             ],
@@ -125,11 +128,17 @@ impl Default for KeyMap {
 }
 
 impl KeyMap {
-    pub fn button_for(&self, key: Key) -> Option<ButtonId> {
+    /// Botón asociado a una tecla, con su combo (para saber si exige Ctrl).
+    pub fn combo_for(&self, key: Key) -> Option<(ButtonId, KeyCombo)> {
         self.buttons
             .iter()
             .find(|(_, combo)| combo.key == key)
-            .map(|(id, _)| *id)
+            .map(|(id, combo)| (*id, *combo))
+    }
+
+    /// Botón asociado a una tecla sin mirar el estado de Ctrl.
+    pub fn button_for(&self, key: Key) -> Option<ButtonId> {
+        self.combo_for(key).map(|(id, _)| id)
     }
 }
 
@@ -194,11 +203,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_map_resolves_confirmed_buttons() {
+    fn default_map_matches_measured_device() {
         let map = KeyMap::default();
-        assert_eq!(map.button_for(Key::KEY_Z), Some(ButtonId::SideLeftUpper));
+        assert_eq!(map.rotate_cw, Key::KEY_VOLUMEUP);
+        assert_eq!(map.rotate_ccw, Key::KEY_VOLUMEDOWN);
+        assert_eq!(map.dial_press, Key::KEY_MUTE);
+        assert_eq!(
+            map.button_for(Key::KEY_PREVIOUSSONG),
+            Some(ButtonId::TopLeft)
+        );
+        assert_eq!(
+            map.button_for(Key::KEY_PLAYPAUSE),
+            Some(ButtonId::TopCenter)
+        );
+        assert_eq!(map.button_for(Key::KEY_NEXTSONG), Some(ButtonId::TopRight));
+        assert_eq!(map.button_for(Key::KEY_V), Some(ButtonId::SideLeftUpper));
+        assert_eq!(map.button_for(Key::KEY_C), Some(ButtonId::SideLeftLower));
         assert_eq!(map.button_for(Key::KEY_Y), Some(ButtonId::SideRightUpper));
-        assert_eq!(map.button_for(Key::KEY_V), Some(ButtonId::SideLeftLower));
+        assert_eq!(map.button_for(Key::KEY_Z), Some(ButtonId::SideRightLower));
+    }
+
+    #[test]
+    fn media_buttons_do_not_require_ctrl() {
+        let map = KeyMap::default();
+        let (id, combo) = map.combo_for(Key::KEY_NEXTSONG).unwrap();
+        assert_eq!(id, ButtonId::TopRight);
+        assert!(!combo.ctrl);
+        let (_, combo) = map.combo_for(Key::KEY_Z).unwrap();
+        assert!(combo.ctrl);
     }
 
     #[test]

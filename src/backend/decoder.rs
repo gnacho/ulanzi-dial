@@ -1,12 +1,15 @@
 //! Traduce eventos crudos de teclado del D100H a gestos semánticos.
 //!
 //! Máquina de estados:
-//!  - La rotación llega como KEY_NEXTSONG/KEY_PREVIOUSSONG (con autorrepetición
-//!    value=2 a ~30 Hz mientras se gira rápido).
-//!  - Los botones llegan como acordes Ctrl+tecla: el decoder sigue el estado de
-//!    Ctrl para saber qué botón físico está pulsado, y si la rueda gira con un
-//!    botón mantenido emite `Rotate` con `modifier` = ese botón.
-//!  - La pulsación larga del dial se detecta por tiempo (umbral configurable).
+//!  - La rotación llega como KEY_VOLUMEUP/KEY_VOLUMEDOWN (un par
+//!    pulsación/liberación por paso, sin autorrepetición).
+//!  - Los tres botones superiores llegan como teclas multimedia sueltas.
+//!  - Los cuatro laterales llegan como acordes Ctrl+tecla. El firmware suelta
+//!    Ctrl antes que la letra, así que el estado de Ctrl solo se usa para
+//!    validar la pulsación y las liberaciones se resuelven por `held_button`.
+//!  - La pulsación larga del dial se detecta por tiempo (umbral configurable),
+//!    pero el firmware actual no mantiene la tecla pulsada: emite pulsación y
+//!    liberación seguidas, así que en la práctica no se dispara.
 
 use evdev::Key;
 
@@ -69,10 +72,9 @@ impl Decoder {
 
         match ev.key {
             Key::KEY_LEFTCTRL | Key::KEY_RIGHTCTRL => {
+                // No se limpia held_button aquí: el firmware suelta Ctrl antes
+                // que la letra, y la liberación se resuelve por tecla.
                 self.ctrl_held = ev.value != 0;
-                if !self.ctrl_held {
-                    self.held_button = None;
-                }
                 return out;
             }
             _ => {}
@@ -106,21 +108,23 @@ impl Decoder {
             return out;
         }
 
-        if self.ctrl_held {
-            if let Some(id) = self.map.button_for(ev.key) {
-                match ev.value {
-                    1 => {
+        if let Some((id, combo)) = self.map.combo_for(ev.key) {
+            match ev.value {
+                1 => {
+                    // Los combos con Ctrl solo cuentan si el firmware lo envió
+                    // antes; las teclas multimedia sueltas cuentan siempre.
+                    if combo.ctrl == self.ctrl_held {
                         self.held_button = Some(id);
                         out.push(DialEvent::ButtonPress(id));
                     }
-                    0 => {
-                        if self.held_button == Some(id) {
-                            self.held_button = None;
-                        }
+                }
+                0 => {
+                    if self.held_button == Some(id) {
+                        self.held_button = None;
                         out.push(DialEvent::ButtonRelease(id));
                     }
-                    _ => {} // autorrepetición de botones: ignorar
                 }
+                _ => {} // autorrepetición de botones: ignorar
             }
         }
 
@@ -164,7 +168,7 @@ mod tests {
     fn rotation_both_directions_and_autorepeat() {
         let mut d = decoder();
         assert_eq!(
-            d.feed(ev(Key::KEY_NEXTSONG, 1, 0)),
+            d.feed(ev(Key::KEY_VOLUMEUP, 1, 0)),
             vec![DialEvent::Rotate {
                 steps: 1,
                 modifier: None
@@ -172,21 +176,21 @@ mod tests {
         );
         // autorrepetición también cuenta como paso
         assert_eq!(
-            d.feed(ev(Key::KEY_NEXTSONG, 2, 33)),
+            d.feed(ev(Key::KEY_VOLUMEUP, 2, 33)),
             vec![DialEvent::Rotate {
                 steps: 1,
                 modifier: None
             }]
         );
         assert_eq!(
-            d.feed(ev(Key::KEY_PREVIOUSSONG, 1, 66)),
+            d.feed(ev(Key::KEY_VOLUMEDOWN, 1, 66)),
             vec![DialEvent::Rotate {
                 steps: -1,
                 modifier: None
             }]
         );
         // liberación no genera paso
-        assert!(d.feed(ev(Key::KEY_NEXTSONG, 0, 99)).is_empty());
+        assert!(d.feed(ev(Key::KEY_VOLUMEUP, 0, 99)).is_empty());
     }
 
     #[test]
@@ -195,15 +199,52 @@ mod tests {
         assert!(d.feed(ev(Key::KEY_LEFTCTRL, 1, 0)).is_empty());
         assert_eq!(
             d.feed(ev(Key::KEY_Z, 1, 10)),
-            vec![DialEvent::ButtonPress(ButtonId::SideLeftUpper)]
+            vec![DialEvent::ButtonPress(ButtonId::SideRightLower)]
         );
         // autorrepetición ignorada
         assert!(d.feed(ev(Key::KEY_Z, 2, 40)).is_empty());
         assert_eq!(
             d.feed(ev(Key::KEY_Z, 0, 100)),
-            vec![DialEvent::ButtonRelease(ButtonId::SideLeftUpper)]
+            vec![DialEvent::ButtonRelease(ButtonId::SideRightLower)]
         );
         assert!(d.feed(ev(Key::KEY_LEFTCTRL, 0, 110)).is_empty());
+    }
+
+    #[test]
+    fn release_survives_ctrl_being_let_go_first() {
+        // El firmware real suelta Ctrl antes que la letra del combo.
+        let mut d = decoder();
+        d.feed(ev(Key::KEY_LEFTCTRL, 1, 0));
+        assert_eq!(
+            d.feed(ev(Key::KEY_V, 1, 10)),
+            vec![DialEvent::ButtonPress(ButtonId::SideLeftUpper)]
+        );
+        assert!(d.feed(ev(Key::KEY_LEFTCTRL, 0, 20)).is_empty());
+        assert_eq!(
+            d.feed(ev(Key::KEY_V, 0, 30)),
+            vec![DialEvent::ButtonRelease(ButtonId::SideLeftUpper)]
+        );
+    }
+
+    #[test]
+    fn media_buttons_work_without_ctrl() {
+        let mut d = decoder();
+        assert_eq!(
+            d.feed(ev(Key::KEY_PREVIOUSSONG, 1, 0)),
+            vec![DialEvent::ButtonPress(ButtonId::TopLeft)]
+        );
+        assert_eq!(
+            d.feed(ev(Key::KEY_PREVIOUSSONG, 0, 10)),
+            vec![DialEvent::ButtonRelease(ButtonId::TopLeft)]
+        );
+        assert_eq!(
+            d.feed(ev(Key::KEY_PLAYPAUSE, 1, 20)),
+            vec![DialEvent::ButtonPress(ButtonId::TopCenter)]
+        );
+        assert_eq!(
+            d.feed(ev(Key::KEY_NEXTSONG, 1, 30)),
+            vec![DialEvent::ButtonPress(ButtonId::TopRight)]
+        );
     }
 
     #[test]
@@ -212,16 +253,16 @@ mod tests {
         d.feed(ev(Key::KEY_LEFTCTRL, 1, 0));
         d.feed(ev(Key::KEY_Y, 1, 10));
         assert_eq!(
-            d.feed(ev(Key::KEY_NEXTSONG, 1, 20)),
+            d.feed(ev(Key::KEY_VOLUMEUP, 1, 20)),
             vec![DialEvent::Rotate {
                 steps: 1,
                 modifier: Some(ButtonId::SideRightUpper)
             }]
         );
-        d.feed(ev(Key::KEY_Y, 0, 30));
-        d.feed(ev(Key::KEY_LEFTCTRL, 0, 40));
+        d.feed(ev(Key::KEY_LEFTCTRL, 0, 30));
+        d.feed(ev(Key::KEY_Y, 0, 35));
         assert_eq!(
-            d.feed(ev(Key::KEY_NEXTSONG, 1, 50)),
+            d.feed(ev(Key::KEY_VOLUMEUP, 1, 50)),
             vec![DialEvent::Rotate {
                 steps: 1,
                 modifier: None
@@ -233,26 +274,26 @@ mod tests {
     fn dial_press_and_long_press() {
         let mut d = decoder();
         assert_eq!(
-            d.feed(ev(Key::KEY_PLAYPAUSE, 1, 1000)),
+            d.feed(ev(Key::KEY_MUTE, 1, 1000)),
             vec![DialEvent::DialPress]
         );
         assert_eq!(d.tick(1400), None); // aún no llega al umbral
         assert_eq!(d.tick(1760), Some(DialEvent::DialLongPress));
         assert_eq!(d.tick(2000), None); // no se repite
         assert!(d.long_press_fired());
-        assert!(d.feed(ev(Key::KEY_PLAYPAUSE, 0, 2100)).is_empty());
+        assert!(d.feed(ev(Key::KEY_MUTE, 0, 2100)).is_empty());
     }
 
     #[test]
     fn short_press_never_fires_long() {
         let mut d = decoder();
-        d.feed(ev(Key::KEY_PLAYPAUSE, 1, 0));
-        d.feed(ev(Key::KEY_PLAYPAUSE, 0, 300));
+        d.feed(ev(Key::KEY_MUTE, 1, 0));
+        d.feed(ev(Key::KEY_MUTE, 0, 300));
         assert_eq!(d.tick(5000), None);
     }
 
     #[test]
-    fn keys_without_ctrl_are_ignored() {
+    fn ctrl_combo_without_ctrl_is_ignored() {
         // Defensa: si el grab exclusivo falla y llegan teclas sueltas.
         let mut d = decoder();
         assert!(d.feed(ev(Key::KEY_Z, 1, 0)).is_empty());
