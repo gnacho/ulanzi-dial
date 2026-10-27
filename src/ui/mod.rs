@@ -271,16 +271,38 @@ fn handle_event(
                     .unwrap_or(Action::None),
                 None => cfg.dial_rotate.clone(),
             };
-            let steps = steps * cfg.sensitivity as i32 * if cfg.invert { -1 } else { 1 };
+            let detents = if cfg.invert { -steps } else { steps };
+            // La sensibilidad solo tiene sentido en las acciones continuas:
+            // aplicada al volumen multiplicaba cada muesca por cinco.
+            let continuous = matches!(action, Action::Scroll | Action::HScroll | Action::Zoom);
+            let amount = if continuous {
+                detents * cfg.sensitivity as i32
+            } else {
+                detents
+            };
+            let volume_step = cfg.volume_step;
+            let show_hud = cfg.show_hud;
             drop(cfg);
 
-            shared.with_executor(|exec| exec.rotate(&action, steps));
+            let measured = shared
+                .with_executor(|exec| exec.rotate(&action, amount, volume_step))
+                .flatten();
 
             // HUD para acciones con valor 0-100
-            if matches!(action, Action::Volume | Action::Brightness | Action::Zoom)
-                && shared.config.borrow().show_hud
-            {
-                let v = (shared.hud_value.get() + steps).clamp(0, 100);
+            if show_hud && matches!(action, Action::Volume | Action::Brightness | Action::Zoom) {
+                let v = match measured {
+                    // Volumen: el valor real que devuelve el mezclador.
+                    Some(real) => real as i32,
+                    None => {
+                        // Brillo del escritorio: salta de 5 en 5. El zoom es
+                        // un contador local sin medida real.
+                        let delta = match action {
+                            Action::Brightness => amount * 5,
+                            _ => amount,
+                        };
+                        (shared.hud_value.get() + delta).clamp(0, 100)
+                    }
+                };
                 shared.hud_value.set(v);
                 hud.show(&action.label(), v);
             }

@@ -116,6 +116,17 @@ top-center = "Ctrl+C"
 #         side-left-upper, side-left-lower, side-right-upper, side-right-lower
 ```
 
+## Volumen fino (opcional)
+
+Las teclas multimedia del escritorio mueven el volumen en saltos fijos (~6% en GNOME), así que el dial habla directamente con PipeWire (`wpctl`) o PulseAudio (`pactl`) y aplica el salto que le digas. Si no encuentra ninguno de los dos, vuelve a las teclas de siempre.
+
+```toml
+volume_step = 3   # puntos de volumen por muesca (1-10; por defecto 3)
+sensitivity = 5   # solo afecta a scroll, scroll horizontal y zoom
+```
+
+El HUD muestra el volumen real que devuelve el mezclador, no un contador interno. La sensibilidad no multiplica el volumen ni el cambio de pista: era lo que hacía que una muesca saltara 30 puntos.
+
 ## Estructura
 
 ```

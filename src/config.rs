@@ -22,7 +22,10 @@ pub struct ControlBinding {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    /// Muescas por evento en las acciones continuas (scroll, zoom).
     pub sensitivity: u8,
+    /// Salto de volumen en tanto por ciento por muesca de la rueda.
+    pub volume_step: u8,
     pub invert: bool,
     pub long_press_ms: u64,
     pub show_hud: bool,
@@ -116,6 +119,7 @@ impl Default for Config {
         );
         Self {
             sensitivity: 5,
+            volume_step: 3,
             invert: false,
             long_press_ms: 750,
             show_hud: true,

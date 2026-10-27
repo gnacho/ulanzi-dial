@@ -116,9 +116,52 @@ fn serde_plain(s: &str) -> Option<Action> {
     })
 }
 
-/// Teclado + rueda virtual por donde salen todas las acciones.
+/// Mezclador disponible para mover el volumen en pasos finos.
+///
+/// Las teclas multimedia del escritorio dan un salto fijo (6% en GNOME), así
+/// que para pasos más pequeños se habla directamente con PipeWire o PulseAudio.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Mixer {
+    Wpctl,
+    Pactl,
+    None,
+}
+
+fn command_exists(name: &str) -> bool {
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
+        .unwrap_or(false)
+}
+
+fn detect_mixer() -> Mixer {
+    if command_exists("wpctl") {
+        Mixer::Wpctl
+    } else if command_exists("pactl") {
+        Mixer::Pactl
+    } else {
+        Mixer::None
+    }
+}
+
+/// `wpctl get-volume` imprime "Volume: 0.42" (y a veces " [MUTED]").
+fn parse_wpctl_volume(out: &str) -> Option<u8> {
+    let raw = out.split_whitespace().nth(1)?;
+    let value: f64 = raw.parse().ok()?;
+    Some((value * 100.0).round().clamp(0.0, 100.0) as u8)
+}
+
+/// `pactl get-sink-volume` imprime "Volume: front-left: 26214 /  40% / …".
+fn parse_pactl_volume(out: &str) -> Option<u8> {
+    let after = out.split("front-left:").nth(1)?;
+    let pct = after.split('/').nth(1)?.trim().trim_end_matches('%');
+    let value: u8 = pct.parse().ok()?;
+    Some(value.min(150))
+}
+
+/// Teclado + rueda virtual por donde salen las acciones.
 pub struct ActionExecutor {
     dev: VirtualDevice,
+    mixer: Mixer,
 }
 
 impl ActionExecutor {
@@ -156,7 +199,10 @@ impl ActionExecutor {
             .with_keys(&keys)?
             .with_relative_axes(&rel)?
             .build()?;
-        Ok(Self { dev })
+        Ok(Self {
+            dev,
+            mixer: detect_mixer(),
+        })
     }
 
     fn emit(&mut self, events: &[(EventType, u16, i32)]) {
@@ -186,45 +232,137 @@ impl ActionExecutor {
         self.emit(&evs);
     }
 
-    /// Acción de rueda: `steps` ya viene con sensibilidad e inversión aplicadas.
-    pub fn rotate(&mut self, action: &Action, steps: i32) {
+    /// Acción de rueda. `steps` es el número de muescas a aplicar (la
+    /// sensibilidad ya viene multiplicada por la UI solo en las acciones
+    /// continuas). `volume_step` es el salto en tanto por ciento por muesca.
+    ///
+    /// Devuelve el volumen real resultante (0-100) cuando la acción es
+    /// `Volume` y hay mezclador, para que el HUD muestre la verdad.
+    pub fn rotate(&mut self, action: &Action, steps: i32, volume_step: u8) -> Option<u8> {
         let dir = steps.signum();
         if dir == 0 {
-            return;
+            return None;
         }
-        for _ in 0..steps.abs() {
-            match action {
-                Action::Volume => self.tap_key(if dir > 0 {
-                    Key::KEY_VOLUMEUP
-                } else {
-                    Key::KEY_VOLUMEDOWN
-                }),
-                Action::Brightness => self.tap_key(if dir > 0 {
+        match action {
+            Action::Volume => return self.change_volume(steps * volume_step as i32),
+            // Brillo y pista van de uno en uno: multiplicarlos por la
+            // sensibilidad convertía cada muesca en un salto enorme.
+            Action::Brightness => {
+                self.tap_key(if dir > 0 {
                     Key::KEY_BRIGHTNESSUP
                 } else {
                     Key::KEY_BRIGHTNESSDOWN
-                }),
-                Action::Track => self.tap_key(if dir > 0 {
+                });
+            }
+            Action::Track => {
+                self.tap_key(if dir > 0 {
                     Key::KEY_NEXTSONG
                 } else {
                     Key::KEY_PREVIOUSSONG
-                }),
-                Action::Zoom => self.tap_chord(
-                    true,
-                    if dir > 0 {
-                        Key::KEY_EQUAL
-                    } else {
-                        Key::KEY_MINUS
-                    },
-                ),
-                Action::Scroll => {
-                    self.emit(&[(EventType::RELATIVE, RelativeAxisType::REL_WHEEL.0, dir)])
-                }
-                Action::HScroll => {
-                    self.emit(&[(EventType::RELATIVE, RelativeAxisType::REL_HWHEEL.0, dir)])
-                }
-                _ => {}
+                });
             }
+            // Acciones continuas: la sensibilidad sí multiplica muescas.
+            Action::Zoom => {
+                let key = if dir > 0 {
+                    Key::KEY_EQUAL
+                } else {
+                    Key::KEY_MINUS
+                };
+                for _ in 0..steps.abs() {
+                    self.tap_chord(true, key);
+                }
+            }
+            Action::Scroll => {
+                for _ in 0..steps.abs() {
+                    self.emit(&[(EventType::RELATIVE, RelativeAxisType::REL_WHEEL.0, dir)]);
+                }
+            }
+            Action::HScroll => {
+                for _ in 0..steps.abs() {
+                    self.emit(&[(EventType::RELATIVE, RelativeAxisType::REL_HWHEEL.0, dir)]);
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
+    /// Sube o baja el volumen `delta` puntos porcentuales.
+    fn change_volume(&mut self, delta: i32) -> Option<u8> {
+        if delta == 0 {
+            return None;
+        }
+        match self.mixer {
+            Mixer::Wpctl => {
+                let arg = if delta > 0 {
+                    format!("{delta}%+")
+                } else {
+                    format!("{}%-", -delta)
+                };
+                let ok = std::process::Command::new("wpctl")
+                    .args(["set-volume", "@DEFAULT_AUDIO_SINK@", &arg])
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+                if !ok {
+                    tracing::warn!("wpctl set-volume falló; usando teclas");
+                    self.tap_volume_keys(delta);
+                    return None;
+                }
+                self.read_volume()
+            }
+            Mixer::Pactl => {
+                let arg = if delta > 0 {
+                    format!("+{delta}%")
+                } else {
+                    format!("{delta}%")
+                };
+                let ok = std::process::Command::new("pactl")
+                    .args(["set-sink-volume", "@DEFAULT_SINK@", &arg])
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+                if !ok {
+                    tracing::warn!("pactl set-sink-volume falló; usando teclas");
+                    self.tap_volume_keys(delta);
+                    return None;
+                }
+                self.read_volume()
+            }
+            Mixer::None => {
+                self.tap_volume_keys(delta);
+                None
+            }
+        }
+    }
+
+    fn tap_volume_keys(&mut self, delta: i32) {
+        let key = if delta > 0 {
+            Key::KEY_VOLUMEUP
+        } else {
+            Key::KEY_VOLUMEDOWN
+        };
+        for _ in 0..delta.abs() {
+            self.tap_key(key);
+        }
+    }
+
+    fn read_volume(&self) -> Option<u8> {
+        let (program, args): (&str, [&str; 2]) = match self.mixer {
+            Mixer::Wpctl | Mixer::None => ("wpctl", ["get-volume", "@DEFAULT_AUDIO_SINK@"]),
+            Mixer::Pactl => ("pactl", ["get-sink-volume", "@DEFAULT_SINK@"]),
+        };
+        let output = std::process::Command::new(program)
+            .args(args)
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        match self.mixer {
+            Mixer::Pactl => parse_pactl_volume(&text),
+            _ => parse_wpctl_volume(&text),
         }
     }
 
@@ -295,6 +433,20 @@ pub fn index_of(options: &[(Action, &'static str)], action: &Action) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_wpctl_volume() {
+        assert_eq!(parse_wpctl_volume("Volume: 0.42\n"), Some(42));
+        assert_eq!(parse_wpctl_volume("Volume: 1.00 [MUTED]\n"), Some(100));
+        assert_eq!(parse_wpctl_volume("sin datos"), None);
+    }
+
+    #[test]
+    fn parses_pactl_volume() {
+        let out = "Volume: front-left: 26214 /  40% / -23.88 dB,   front-right: 26214 /  40% / -23.88 dB\n";
+        assert_eq!(parse_pactl_volume(out), Some(40));
+        assert_eq!(parse_pactl_volume("sin datos"), None);
+    }
 
     #[test]
     fn labels_are_user_facing_spanish() {
