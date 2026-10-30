@@ -161,6 +161,33 @@ pub fn build_ui(app: &adw::Application) {
     });
     header.pack_start(&theme_btn);
 
+    // Menú de la derecha: Acerca de.
+    let about_action = gtk::gio::SimpleAction::new("about", None);
+    {
+        let window = window.clone();
+        about_action.connect_activate(move |_, _| {
+            let about = adw::AboutWindow::builder()
+                .application_name("Ulanzi Dial")
+                .application_icon("dev.ulanzi.dial")
+                .version(env!("CARGO_PKG_VERSION"))
+                .developer_name("gnacho")
+                .website("https://github.com/gnacho/ulanzi-dial")
+                .issue_url("https://github.com/gnacho/ulanzi-dial/issues")
+                .license_type(gtk::License::Gpl30)
+                .build();
+            about.set_transient_for(Some(&window));
+            about.present();
+        });
+    }
+    app.add_action(&about_action);
+    let about_menu = gtk::gio::Menu::new();
+    about_menu.append(Some("Acerca de"), Some("app.about"));
+    let about_btn = gtk::MenuButton::new();
+    about_btn.set_icon_name("open-menu-symbolic");
+    about_btn.set_tooltip_text(Some("Acerca de Ulanzi Dial"));
+    about_btn.set_menu_model(Some(&about_menu));
+    header.pack_end(&about_btn);
+
     let stack = adw::ViewStack::new();
     let switcher = adw::ViewSwitcher::new();
     switcher.set_stack(Some(&stack));
@@ -196,7 +223,8 @@ pub fn build_ui(app: &adw::Application) {
         let shared = shared.clone();
         move |msg| shared.toast(msg)
     });
-    stack.add_titled(&device.borrow().widget, Some("device"), "Dispositivo");
+    let device_tab = stack.add_titled(&device.borrow().widget, Some("device"), "Dispositivo");
+    device_tab.set_icon_name(Some("multimedia-volume-control-symbolic"));
 
     // Perfiles por aplicación: la extensión de GNOME publica la ventana activa.
     {
@@ -220,7 +248,8 @@ pub fn build_ui(app: &adw::Application) {
         let device = device.clone();
         move || device.borrow().map.refresh()
     });
-    stack.add_titled(&general, Some("general"), "General");
+    let general_tab = stack.add_titled(&general, Some("general"), "General");
+    general_tab.set_icon_name(Some("emblem-system-symbolic"));
 
     // Alto fijo: el contenido se compone a tamaño constante; si algún tema lo
     // agranda, el scrolled absorbe la diferencia en vertical sin recortar.
