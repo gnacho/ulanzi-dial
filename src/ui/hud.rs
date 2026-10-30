@@ -29,6 +29,12 @@ impl Hud {
         window.set_decorated(false);
         window.set_resizable(false);
         window.set_modal(false);
+        // El HUD nunca acepta el foco: en Wayland present() de una ventana
+        // normal puede robarlo y, con la extensión de perfiles cargada,
+        // cada cambio de foco conmuta de perfil en pleno gesto. gtk4-rs no
+        // expone setters para estas dos propiedades.
+        window.set_property("accept-focus", false);
+        window.set_property("focus-on-map", false);
         window.add_css_class("hud-window");
 
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 4);
