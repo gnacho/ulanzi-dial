@@ -67,15 +67,13 @@ impl DevicePage {
         let map = ControlMap::new(config, on_toast);
         page.append(&map.widget);
 
-        let page_handle = Rc::new(RefCell::new(Self {
+        Rc::new(RefCell::new(Self {
             widget: page,
             map,
             status_subtitle: subtitle,
             connected: false,
             battery: None,
-        }));
-
-        page_handle
+        }))
     }
 
     pub fn set_connected(&mut self, connected: bool) {

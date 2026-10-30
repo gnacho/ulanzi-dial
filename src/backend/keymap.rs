@@ -25,16 +25,6 @@ pub enum ButtonId {
 }
 
 impl ButtonId {
-    pub const ALL: [ButtonId; 7] = [
-        ButtonId::TopLeft,
-        ButtonId::TopCenter,
-        ButtonId::TopRight,
-        ButtonId::SideLeftUpper,
-        ButtonId::SideLeftLower,
-        ButtonId::SideRightUpper,
-        ButtonId::SideRightLower,
-    ];
-
     pub fn label(self) -> &'static str {
         match self {
             ButtonId::TopLeft => "Superior izquierdo",
@@ -172,11 +162,6 @@ impl KeyMap {
             .iter()
             .find(|(_, combo)| combo.key == key)
             .map(|(id, combo)| (*id, *combo))
-    }
-
-    /// Botón asociado a una tecla sin mirar el estado de Ctrl.
-    pub fn button_for(&self, key: Key) -> Option<ButtonId> {
-        self.combo_for(key).map(|(id, _)| id)
     }
 }
 
@@ -319,18 +304,33 @@ mod tests {
         assert_eq!(map.rotate_ccw, Key::KEY_VOLUMEDOWN);
         assert_eq!(map.dial_press, Key::KEY_MUTE);
         assert_eq!(
-            map.button_for(Key::KEY_PREVIOUSSONG),
-            Some(ButtonId::TopLeft)
+            map.combo_for(Key::KEY_PREVIOUSSONG).unwrap().0,
+            ButtonId::TopLeft
         );
         assert_eq!(
-            map.button_for(Key::KEY_PLAYPAUSE),
-            Some(ButtonId::TopCenter)
+            map.combo_for(Key::KEY_PLAYPAUSE).unwrap().0,
+            ButtonId::TopCenter
         );
-        assert_eq!(map.button_for(Key::KEY_NEXTSONG), Some(ButtonId::TopRight));
-        assert_eq!(map.button_for(Key::KEY_V), Some(ButtonId::SideLeftUpper));
-        assert_eq!(map.button_for(Key::KEY_C), Some(ButtonId::SideLeftLower));
-        assert_eq!(map.button_for(Key::KEY_Y), Some(ButtonId::SideRightUpper));
-        assert_eq!(map.button_for(Key::KEY_Z), Some(ButtonId::SideRightLower));
+        assert_eq!(
+            map.combo_for(Key::KEY_NEXTSONG).unwrap().0,
+            ButtonId::TopRight
+        );
+        assert_eq!(
+            map.combo_for(Key::KEY_V).unwrap().0,
+            ButtonId::SideLeftUpper
+        );
+        assert_eq!(
+            map.combo_for(Key::KEY_C).unwrap().0,
+            ButtonId::SideLeftLower
+        );
+        assert_eq!(
+            map.combo_for(Key::KEY_Y).unwrap().0,
+            ButtonId::SideRightUpper
+        );
+        assert_eq!(
+            map.combo_for(Key::KEY_Z).unwrap().0,
+            ButtonId::SideRightLower
+        );
     }
 
     #[test]
@@ -436,7 +436,16 @@ mod tests {
     #[test]
     fn seven_buttons_mapped() {
         let map = KeyMap::default();
-        for id in ButtonId::ALL {
+        let all = [
+            ButtonId::TopLeft,
+            ButtonId::TopCenter,
+            ButtonId::TopRight,
+            ButtonId::SideLeftUpper,
+            ButtonId::SideLeftLower,
+            ButtonId::SideRightUpper,
+            ButtonId::SideRightLower,
+        ];
+        for id in all {
             assert!(map.buttons.iter().any(|(b, _)| *b == id), "falta {id:?}");
         }
     }

@@ -3,7 +3,7 @@
 //! Elegimos TOML en lugar de GSettings para que la app funcione sin instalar
 //! esquemas (cargo run directo). Migrar a GSettings es trivial si se empaqueta.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -20,17 +20,13 @@ pub struct ControlBinding {
 /// Cómo se aplica el volumen al girar la rueda.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum VolumeMode {
     /// Teclas multimedia: el escritorio pinta su propio OSD y aplica su salto.
+    #[default]
     Keys,
     /// Mezclador de audio (wpctl/pactl): salto `volume_step`, sin OSD del escritorio.
     Mixer,
-}
-
-impl Default for VolumeMode {
-    fn default() -> Self {
-        Self::Keys
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -59,7 +55,8 @@ pub struct Config {
 
     /// Perfiles por aplicación (conmutación automática: pendiente de
     /// foreign-toplevel en Wayland; por ahora se aplican manualmente).
-    pub profiles: HashMap<String, Profile>,
+    /// BTreeMap para que [profiles.*] salga siempre en el mismo orden.
+    pub profiles: BTreeMap<String, Profile>,
     /// Perfil fijado a mano en la pestaña General; manda sobre la app activa.
     pub pinned_profile: Option<String>,
     /// Perfil impuesto por la ventana activa. No se guarda en el fichero.
@@ -141,7 +138,7 @@ impl Default for Config {
             dial_press: Action::Mute,
             buttons,
             keymap: HashMap::new(),
-            profiles: HashMap::new(),
+            profiles: BTreeMap::new(),
             pinned_profile: None,
             active_profile: None,
         }
@@ -253,7 +250,6 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::actions::action_from_str;
 
     #[test]
     fn default_roundtrips_through_toml() {
@@ -301,11 +297,17 @@ mod tests {
     }
 
     #[test]
-    fn command_action_parses() {
-        assert_eq!(
-            action_from_str("command:notify-send hola"),
-            Action::Command("notify-send hola".into())
-        );
+    fn command_and_chord_roundtrip_through_toml() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Wrapper {
+            press: Action,
+        }
+        let w: Wrapper = toml::from_str("press = { command = \"notify-send hola\" }").unwrap();
+        assert_eq!(w.press, Action::Command("notify-send hola".into()));
+        let back: Wrapper = toml::from_str(&toml::to_string(&w).unwrap()).unwrap();
+        assert_eq!(back.press, Action::Command("notify-send hola".into()));
+        let c: Wrapper = toml::from_str("press = { chord = \"Ctrl+Z\" }").unwrap();
+        assert_eq!(c.press, Action::Chord("Ctrl+Z".into()));
     }
 
     #[test]

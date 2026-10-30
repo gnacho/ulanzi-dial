@@ -40,29 +40,6 @@ pub enum Action {
 }
 
 impl Action {
-    /// Opciones mostradas en la UI para gestos de rueda.
-    pub const SPIN_CHOICES: &'static [&'static str] = &[
-        "volume",
-        "scroll",
-        "hscroll",
-        "brightness",
-        "zoom",
-        "track",
-        "none",
-    ];
-    /// Opciones para pulsaciones de botones.
-    pub const PRESS_CHOICES: &'static [&'static str] = &[
-        "undo",
-        "redo",
-        "copy",
-        "paste",
-        "playpause",
-        "mute",
-        "screenshot",
-        "lock",
-        "none",
-    ];
-
     /// Atajo que emite la acción cuando es una combinación de teclas.
     /// Lo usan la UI (para enseñarlo) y el emisor (para mandarlo).
     pub fn shortcut(&self) -> Option<KeyCombo> {
@@ -130,39 +107,6 @@ impl Action {
             Action::Chord(_) => "input-keyboard-symbolic",
         }
     }
-}
-
-/// Parsea el valor de texto guardado en el config (kebab-case o con payload).
-pub fn action_from_str(s: &str) -> Action {
-    if let Some(cmd) = s.strip_prefix("command:") {
-        return Action::Command(cmd.to_string());
-    }
-    if let Some(chord) = s.strip_prefix("chord:") {
-        return Action::Chord(chord.to_string());
-    }
-    serde_plain(s).unwrap_or(Action::None)
-}
-
-fn serde_plain(s: &str) -> Option<Action> {
-    // Serialización kebab-case de las variantes sin payload.
-    Some(match s {
-        "volume" => Action::Volume,
-        "scroll" => Action::Scroll,
-        "hscroll" => Action::HScroll,
-        "brightness" => Action::Brightness,
-        "zoom" => Action::Zoom,
-        "track" => Action::Track,
-        "mute" => Action::Mute,
-        "playpause" => Action::PlayPause,
-        "undo" => Action::Undo,
-        "redo" => Action::Redo,
-        "copy" => Action::Copy,
-        "paste" => Action::Paste,
-        "screenshot" => Action::Screenshot,
-        "lock" => Action::Lock,
-        "none" => Action::None,
-        _ => return None,
-    })
 }
 
 /// Mezclador disponible para mover el volumen en pasos finos.
@@ -539,26 +483,5 @@ mod tests {
             Action::Command("flameshot gui".into()).label(),
             "Ejecutar: flameshot gui"
         );
-    }
-
-    #[test]
-    fn roundtrip_plain_and_payload_actions() {
-        assert_eq!(action_from_str("volume"), Action::Volume);
-        assert_eq!(
-            action_from_str("command:flameshot gui"),
-            Action::Command("flameshot gui".into())
-        );
-        assert_eq!(
-            action_from_str("chord:Ctrl+Shift+T"),
-            Action::Chord("Ctrl+Shift+T".into())
-        );
-        assert_eq!(action_from_str("bogus"), Action::None);
-    }
-
-    #[test]
-    fn choices_cover_the_mockup_options() {
-        // Las cadenas deben mapear 1:1 con las etiquetas del mockup.
-        assert_eq!(Action::SPIN_CHOICES.len(), 7);
-        assert!(Action::PRESS_CHOICES.contains(&"playpause"));
     }
 }

@@ -14,6 +14,7 @@
 //!  - La pulsación de la rueda no informa de mantención: una pulsación de dos
 //!    segundos llega como pulsación y liberación con 10 ms de diferencia, así
 //!    que no hay pulsación larga.
+//!
 //! Por eso cada control tiene una sola acción y el decoder no acumula estado
 //! de tiempo.
 
@@ -99,11 +100,9 @@ impl Decoder {
                         out.push(DialEvent::ButtonPress(id));
                     }
                 }
-                0 => {
-                    if self.held_button == Some(id) {
-                        self.held_button = None;
-                        out.push(DialEvent::ButtonRelease(id));
-                    }
+                0 if self.held_button == Some(id) => {
+                    self.held_button = None;
+                    out.push(DialEvent::ButtonRelease(id));
                 }
                 _ => {} // autorrepetición de botones: ignorar
             }
