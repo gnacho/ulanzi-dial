@@ -210,102 +210,132 @@ pub fn parse_combo(s: &str) -> Option<KeyCombo> {
 }
 
 /// Nombres de tecla aceptados en el config (letras sueltas o nombres KEY_*).
+/// Todas las teclas que la app puede emitir, con alias y sin el prefijo
+/// KEY_ (acepta tanto "F11" como "KEY_F11"). Es la única fuente de teclas:
+/// de aquí sale tanto el parsing del config como el set declarado en el
+/// dispositivo virtual uinput.
+static KEY_NAMES: &[(&str, Key)] = &[
+    ("A", Key::KEY_A),
+    ("B", Key::KEY_B),
+    ("C", Key::KEY_C),
+    ("D", Key::KEY_D),
+    ("E", Key::KEY_E),
+    ("F", Key::KEY_F),
+    ("G", Key::KEY_G),
+    ("H", Key::KEY_H),
+    ("I", Key::KEY_I),
+    ("J", Key::KEY_J),
+    ("K", Key::KEY_K),
+    ("L", Key::KEY_L),
+    ("M", Key::KEY_M),
+    ("N", Key::KEY_N),
+    ("O", Key::KEY_O),
+    ("P", Key::KEY_P),
+    ("Q", Key::KEY_Q),
+    ("R", Key::KEY_R),
+    ("S", Key::KEY_S),
+    ("T", Key::KEY_T),
+    ("U", Key::KEY_U),
+    ("V", Key::KEY_V),
+    ("W", Key::KEY_W),
+    ("X", Key::KEY_X),
+    ("Y", Key::KEY_Y),
+    ("Z", Key::KEY_Z),
+    ("PLAYPAUSE", Key::KEY_PLAYPAUSE),
+    ("NEXTSONG", Key::KEY_NEXTSONG),
+    ("PREVIOUSSONG", Key::KEY_PREVIOUSSONG),
+    ("MUTE", Key::KEY_MUTE),
+    ("VOLUMEUP", Key::KEY_VOLUMEUP),
+    ("VOLUMEDOWN", Key::KEY_VOLUMEDOWN),
+    ("BRIGHTNESSUP", Key::KEY_BRIGHTNESSUP),
+    ("BRIGHTNESSDOWN", Key::KEY_BRIGHTNESSDOWN),
+    ("TAB", Key::KEY_TAB),
+    ("ENTER", Key::KEY_ENTER),
+    ("ESC", Key::KEY_ESC),
+    ("ESCAPE", Key::KEY_ESC),
+    ("SPACE", Key::KEY_SPACE),
+    ("BACKSPACE", Key::KEY_BACKSPACE),
+    ("DELETE", Key::KEY_DELETE),
+    ("INSERT", Key::KEY_INSERT),
+    ("HOME", Key::KEY_HOME),
+    ("END", Key::KEY_END),
+    ("PAGEUP", Key::KEY_PAGEUP),
+    ("PAGEDOWN", Key::KEY_PAGEDOWN),
+    ("LEFT", Key::KEY_LEFT),
+    ("RIGHT", Key::KEY_RIGHT),
+    ("UP", Key::KEY_UP),
+    ("DOWN", Key::KEY_DOWN),
+    ("PRINT", Key::KEY_SYSRQ),
+    ("SYSRQ", Key::KEY_SYSRQ),
+    ("MENU", Key::KEY_MENU),
+    ("0", Key::KEY_0),
+    ("1", Key::KEY_1),
+    ("2", Key::KEY_2),
+    ("3", Key::KEY_3),
+    ("4", Key::KEY_4),
+    ("5", Key::KEY_5),
+    ("6", Key::KEY_6),
+    ("7", Key::KEY_7),
+    ("8", Key::KEY_8),
+    ("9", Key::KEY_9),
+    ("DIGIT0", Key::KEY_0),
+    ("DIGIT1", Key::KEY_1),
+    ("DIGIT2", Key::KEY_2),
+    ("DIGIT3", Key::KEY_3),
+    ("DIGIT4", Key::KEY_4),
+    ("DIGIT5", Key::KEY_5),
+    ("DIGIT6", Key::KEY_6),
+    ("DIGIT7", Key::KEY_7),
+    ("DIGIT8", Key::KEY_8),
+    ("DIGIT9", Key::KEY_9),
+    ("F1", Key::KEY_F1),
+    ("F2", Key::KEY_F2),
+    ("F3", Key::KEY_F3),
+    ("F4", Key::KEY_F4),
+    ("F5", Key::KEY_F5),
+    ("F6", Key::KEY_F6),
+    ("F7", Key::KEY_F7),
+    ("F8", Key::KEY_F8),
+    ("F9", Key::KEY_F9),
+    ("F10", Key::KEY_F10),
+    ("F11", Key::KEY_F11),
+    ("F12", Key::KEY_F12),
+    ("MINUS", Key::KEY_MINUS),
+    ("EQUAL", Key::KEY_EQUAL),
+    ("PLUS", Key::KEY_EQUAL),
+    ("COMMA", Key::KEY_COMMA),
+    ("DOT", Key::KEY_DOT),
+    ("PERIOD", Key::KEY_DOT),
+    ("SLASH", Key::KEY_SLASH),
+    ("SEMICOLON", Key::KEY_SEMICOLON),
+    ("APOSTROPHE", Key::KEY_APOSTROPHE),
+    ("GRAVE", Key::KEY_GRAVE),
+    ("LEFTBRACE", Key::KEY_LEFTBRACE),
+    ("RIGHTBRACE", Key::KEY_RIGHTBRACE),
+    ("BACKSLASH", Key::KEY_BACKSLASH),
+    ("LEFTMETA", Key::KEY_LEFTMETA),
+    ("SUPER", Key::KEY_LEFTMETA),
+    ("LEFTCTRL", Key::KEY_LEFTCTRL),
+    ("CTRL", Key::KEY_LEFTCTRL),
+    ("LEFTSHIFT", Key::KEY_LEFTSHIFT),
+    ("SHIFT", Key::KEY_LEFTSHIFT),
+    ("LEFTALT", Key::KEY_LEFTALT),
+    ("ALT", Key::KEY_LEFTALT),
+];
+
 pub fn named_key(name: &str) -> Option<Key> {
     let upper = name.to_ascii_uppercase();
-    let with_prefix = if upper.starts_with("KEY_") {
-        upper.clone()
-    } else {
-        format!("KEY_{upper}")
-    };
-    Some(match with_prefix.as_str() {
-        "KEY_A" => Key::KEY_A,
-        "KEY_B" => Key::KEY_B,
-        "KEY_C" => Key::KEY_C,
-        "KEY_D" => Key::KEY_D,
-        "KEY_E" => Key::KEY_E,
-        "KEY_F" => Key::KEY_F,
-        "KEY_G" => Key::KEY_G,
-        "KEY_H" => Key::KEY_H,
-        "KEY_I" => Key::KEY_I,
-        "KEY_J" => Key::KEY_J,
-        "KEY_K" => Key::KEY_K,
-        "KEY_L" => Key::KEY_L,
-        "KEY_M" => Key::KEY_M,
-        "KEY_N" => Key::KEY_N,
-        "KEY_O" => Key::KEY_O,
-        "KEY_P" => Key::KEY_P,
-        "KEY_Q" => Key::KEY_Q,
-        "KEY_R" => Key::KEY_R,
-        "KEY_S" => Key::KEY_S,
-        "KEY_T" => Key::KEY_T,
-        "KEY_U" => Key::KEY_U,
-        "KEY_V" => Key::KEY_V,
-        "KEY_W" => Key::KEY_W,
-        "KEY_X" => Key::KEY_X,
-        "KEY_Y" => Key::KEY_Y,
-        "KEY_Z" => Key::KEY_Z,
-        "KEY_PLAYPAUSE" => Key::KEY_PLAYPAUSE,
-        "KEY_NEXTSONG" => Key::KEY_NEXTSONG,
-        "KEY_PREVIOUSSONG" => Key::KEY_PREVIOUSSONG,
-        "KEY_MUTE" => Key::KEY_MUTE,
-        "KEY_VOLUMEUP" => Key::KEY_VOLUMEUP,
-        "KEY_VOLUMEDOWN" => Key::KEY_VOLUMEDOWN,
-        "KEY_TAB" => Key::KEY_TAB,
-        "KEY_ENTER" => Key::KEY_ENTER,
-        "KEY_ESC" | "KEY_ESCAPE" => Key::KEY_ESC,
-        "KEY_SPACE" => Key::KEY_SPACE,
-        "KEY_BACKSPACE" => Key::KEY_BACKSPACE,
-        "KEY_DELETE" => Key::KEY_DELETE,
-        "KEY_INSERT" => Key::KEY_INSERT,
-        "KEY_HOME" => Key::KEY_HOME,
-        "KEY_END" => Key::KEY_END,
-        "KEY_PAGEUP" => Key::KEY_PAGEUP,
-        "KEY_PAGEDOWN" => Key::KEY_PAGEDOWN,
-        "KEY_LEFT" => Key::KEY_LEFT,
-        "KEY_RIGHT" => Key::KEY_RIGHT,
-        "KEY_UP" => Key::KEY_UP,
-        "KEY_DOWN" => Key::KEY_DOWN,
-        "KEY_PRINT" | "KEY_SYSRQ" => Key::KEY_SYSRQ,
-        "KEY_MENU" => Key::KEY_MENU,
-        "KEY_0" | "KEY_DIGIT0" => Key::KEY_0,
-        "KEY_1" | "KEY_DIGIT1" => Key::KEY_1,
-        "KEY_2" | "KEY_DIGIT2" => Key::KEY_2,
-        "KEY_3" | "KEY_DIGIT3" => Key::KEY_3,
-        "KEY_4" | "KEY_DIGIT4" => Key::KEY_4,
-        "KEY_5" | "KEY_DIGIT5" => Key::KEY_5,
-        "KEY_6" | "KEY_DIGIT6" => Key::KEY_6,
-        "KEY_7" | "KEY_DIGIT7" => Key::KEY_7,
-        "KEY_8" | "KEY_DIGIT8" => Key::KEY_8,
-        "KEY_9" | "KEY_DIGIT9" => Key::KEY_9,
-        "KEY_F1" => Key::KEY_F1,
-        "KEY_F2" => Key::KEY_F2,
-        "KEY_F3" => Key::KEY_F3,
-        "KEY_F4" => Key::KEY_F4,
-        "KEY_F5" => Key::KEY_F5,
-        "KEY_F6" => Key::KEY_F6,
-        "KEY_F7" => Key::KEY_F7,
-        "KEY_F8" => Key::KEY_F8,
-        "KEY_F9" => Key::KEY_F9,
-        "KEY_F10" => Key::KEY_F10,
-        "KEY_F11" => Key::KEY_F11,
-        "KEY_F12" => Key::KEY_F12,
-        "KEY_MINUS" => Key::KEY_MINUS,
-        "KEY_EQUAL" | "KEY_PLUS" => Key::KEY_EQUAL,
-        "KEY_COMMA" => Key::KEY_COMMA,
-        "KEY_DOT" | "KEY_PERIOD" => Key::KEY_DOT,
-        "KEY_SLASH" => Key::KEY_SLASH,
-        "KEY_SEMICOLON" => Key::KEY_SEMICOLON,
-        "KEY_APOSTROPHE" => Key::KEY_APOSTROPHE,
-        "KEY_GRAVE" => Key::KEY_GRAVE,
-        "KEY_LEFTBRACE" => Key::KEY_LEFTBRACE,
-        "KEY_RIGHTBRACE" => Key::KEY_RIGHTBRACE,
-        "KEY_BACKSLASH" => Key::KEY_BACKSLASH,
-        "KEY_LEFTMETA" | "KEY_SUPER" => Key::KEY_LEFTMETA,
-        "KEY_LEFTCTRL" | "KEY_CTRL" => Key::KEY_LEFTCTRL,
-        "KEY_LEFTSHIFT" | "KEY_SHIFT" => Key::KEY_LEFTSHIFT,
-        "KEY_LEFTALT" | "KEY_ALT" => Key::KEY_LEFTALT,
-        _ => return None,
-    })
+    let bare = upper.strip_prefix("KEY_").unwrap_or(&upper);
+    KEY_NAMES
+        .iter()
+        .find(|(candidate, _)| *candidate == bare)
+        .map(|(_, key)| *key)
+}
+
+/// Teclas distintas de la tabla, para declarar en el dispositivo virtual
+/// todas las que la app puede llegar a emitir (atajos y acciones de medios).
+pub fn all_named_keys() -> impl Iterator<Item = Key> {
+    KEY_NAMES.iter().map(|(_, key)| *key)
 }
 
 #[cfg(test)]
@@ -439,5 +469,47 @@ mod tests {
         for id in ButtonId::ALL {
             assert!(map.buttons.iter().any(|(b, _)| *b == id), "falta {id:?}");
         }
+    }
+
+    #[test]
+    fn named_key_accepts_prefix_and_aliases() {
+        assert_eq!(named_key("f11"), named_key("KEY_F11"));
+        assert_eq!(named_key("PRINT"), named_key("SYSRQ"));
+        assert_eq!(named_key("DIGIT3"), named_key("3"));
+        assert_eq!(named_key("PLUS"), named_key("EQUAL"));
+        assert_eq!(named_key("SUPER"), Some(Key::KEY_LEFTMETA));
+        assert!(named_key("no-existe").is_none());
+    }
+
+    #[test]
+    fn table_covers_the_keys_a_chord_can_ask_for() {
+        let declared: std::collections::HashSet<_> = all_named_keys().collect();
+        for name in [
+            "LEFTMETA",
+            "F11",
+            "F12",
+            "1",
+            "UP",
+            "TAB",
+            "N",
+            "W",
+            "BRIGHTNESSUP",
+        ] {
+            let key = named_key(name).unwrap_or_else(|| panic!("falta {name} en la tabla"));
+            assert!(declared.contains(&key), "{name} no queda declarada");
+        }
+        for modifier in ["LEFTCTRL", "LEFTSHIFT", "LEFTALT"] {
+            let key = named_key(modifier).unwrap();
+            assert!(declared.contains(&key));
+        }
+    }
+
+    #[test]
+    fn key_names_have_no_duplicates() {
+        let mut names: Vec<_> = KEY_NAMES.iter().map(|(name, _)| *name).collect();
+        names.sort_unstable();
+        let total = names.len();
+        names.dedup();
+        assert_eq!(names.len(), total, "nombres duplicados en KEY_NAMES");
     }
 }

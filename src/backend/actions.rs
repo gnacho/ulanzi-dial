@@ -9,7 +9,7 @@ use evdev::uinput::VirtualDevice;
 use evdev::{AttributeSet, EventType, InputEvent, Key, RelativeAxisType};
 use serde::{Deserialize, Serialize};
 
-use crate::backend::keymap::{parse_combo, KeyCombo};
+use crate::backend::keymap::{all_named_keys, parse_combo, KeyCombo};
 use crate::config::VolumeMode;
 
 /// Acción asignable a un gesto. Se serializa en kebab-case en el config.toml.
@@ -216,27 +216,10 @@ pub struct ActionExecutor {
 impl ActionExecutor {
     pub fn new() -> std::io::Result<Self> {
         let mut keys = AttributeSet::<Key>::new();
-        for k in [
-            Key::KEY_VOLUMEUP,
-            Key::KEY_VOLUMEDOWN,
-            Key::KEY_MUTE,
-            Key::KEY_PLAYPAUSE,
-            Key::KEY_NEXTSONG,
-            Key::KEY_PREVIOUSSONG,
-            Key::KEY_BRIGHTNESSUP,
-            Key::KEY_BRIGHTNESSDOWN,
-            Key::KEY_LEFTCTRL,
-            Key::KEY_LEFTSHIFT,
-            Key::KEY_LEFTALT,
-            Key::KEY_MINUS,
-            Key::KEY_EQUAL,
-            Key::KEY_Z,
-            Key::KEY_Y,
-            Key::KEY_C,
-            Key::KEY_V,
-            Key::KEY_T,
-            Key::KEY_SYSRQ,
-        ] {
+        // Toda tecla que la app puede emitir sale de la tabla de nombres:
+        // acordes configurables y acciones de medios. Declarar un set menor
+        // hacía que evdev descartara en silencio las teclas no declaradas.
+        for k in all_named_keys() {
             keys.insert(k);
         }
         let mut rel = AttributeSet::<RelativeAxisType>::new();
