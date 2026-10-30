@@ -11,8 +11,9 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use gtk::prelude::*;
 use gtk4 as gtk;
+use libadwaita as adw;
+use libadwaita::prelude::*;
 
 use crate::backend::actions::{self, Action};
 use crate::backend::keymap::ButtonId;
@@ -151,6 +152,44 @@ fn dropdown(
         }
     });
     dd
+}
+
+/// Diálogo para escribir el comando de una acción personalizada. Solo llama
+/// a `on_save` con texto no vacío; cancelar o vacío deja la acción como estaba.
+fn open_command_dialog(
+    parent: Option<&adw::ApplicationWindow>,
+    on_save: impl Fn(String) + 'static,
+) {
+    let dialog = adw::MessageDialog::new(
+        parent,
+        Some("Comando personalizado"),
+        Some("Se ejecuta con tu shell al pulsar el control."),
+    );
+    let entry = gtk::Entry::new();
+    entry.set_placeholder_text(Some("notify-send \"Hola desde el dial\""));
+    entry.set_width_chars(38);
+    dialog.set_extra_child(Some(&entry));
+    dialog.add_response("cancel", "Cancelar");
+    dialog.add_response("save", "Guardar");
+    dialog.set_response_appearance("save", adw::ResponseAppearance::Suggested);
+    dialog.set_default_response(Some("save"));
+    dialog.set_close_response("cancel");
+    {
+        let dialog = dialog.clone();
+        entry.connect_activate(move |_| dialog.response("save"));
+    }
+    dialog.connect_response(Some("save"), move |dialog, _| {
+        let text = dialog
+            .extra_child()
+            .and_downcast::<gtk::Entry>()
+            .map(|entry| entry.text().to_string())
+            .unwrap_or_default();
+        let trimmed = text.trim().to_string();
+        if !trimmed.is_empty() {
+            on_save(trimmed);
+        }
+    });
+    dialog.present();
 }
 
 /// Fábrica de items de la lista desplegable: icono simbólico más etiqueta.
@@ -318,6 +357,17 @@ impl ControlMap {
                         // Refresh() programático: repintar sin persistir,
                         // si no, cada cambio de perfil materializaba el
                         // fallback global como binding explícito del perfil.
+                        return;
+                    }
+                    if matches!(&action, Action::Command(c) if c.is_empty()) {
+                        // Fila centinela "Ejecutar comando…": pedir el
+                        // comando; no se guarda hasta que el usuario escribe
+                        // uno y acepta.
+                        let root = chord_button.root().and_downcast::<adw::ApplicationWindow>();
+                        open_command_dialog(root.as_ref(), {
+                            let on_change = on_change.clone();
+                            move |cmd| on_change(Action::Command(cmd))
+                        });
                         return;
                     }
                     match action.shortcut() {
