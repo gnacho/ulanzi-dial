@@ -184,17 +184,59 @@ fn set_autostart(enabled: bool) {
     let file = dir.join("ulanzi-dial.desktop");
     if enabled {
         let _ = std::fs::create_dir_all(&dir);
+        // Ruta absoluta: un .desktop no hereda el PATH de la sesión y
+        // "ulanzi-dial" a secas no arrancaba si ~/.local/bin no estaba en
+        // él. Icon = el que instala hicolor (dev.ulanzi.dial).
+        let exe = std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "ulanzi-dial".to_string());
         let _ = std::fs::write(
             &file,
-            concat!(
-                "[Desktop Entry]\n",
-                "Type=Application\n",
-                "Name=Ulanzi Dial\n",
-                "Exec=ulanzi-dial\n",
-                "X-GNOME-Autostart-enabled=true\n",
+            format!(
+                "[Desktop Entry]\n\
+                 Type=Application\n\
+                 Name=Ulanzi Dial\n\
+                 Exec=\"{exe}\"\n\
+                 Icon=dev.ulanzi.dial\n\
+                 X-GNOME-Autostart-enabled=true\n"
             ),
         );
     } else {
         let _ = std::fs::remove_file(&file);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn autostart_entry_has_absolute_exec_and_icon() {
+        // HOME propio y lock para no pisar a otros tests en paralelo.
+        static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = HOME_LOCK.lock().unwrap();
+        let home = std::env::temp_dir().join(format!("ulanzi-home-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let previous = std::env::var_os("HOME");
+        std::env::set_var("HOME", &home);
+
+        set_autostart(true);
+        let file = home.join(".config/autostart/ulanzi-dial.desktop");
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            text.contains("Exec=\""),
+            "Exec debe ir con ruta absoluta entre comillas"
+        );
+        assert!(text.contains("Icon=dev.ulanzi.dial"));
+        assert!(text.contains("X-GNOME-Autostart-enabled=true"));
+
+        set_autostart(false);
+        assert!(!file.exists());
+
+        match previous {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
+        let _ = std::fs::remove_dir_all(&home);
     }
 }
