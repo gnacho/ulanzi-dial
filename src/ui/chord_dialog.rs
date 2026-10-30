@@ -11,7 +11,7 @@ use gtk::prelude::*;
 use gtk::{gdk, glib};
 use gtk4 as gtk;
 
-use crate::backend::keymap::parse_combo;
+use crate::backend::keymap::{named_key, parse_combo};
 
 /// Atajos conocidos de GNOME. No dejan de ser combinaciones de teclas: se
 /// ofrecen como atajo para no tener que recordarlos al configurar.
@@ -222,14 +222,39 @@ fn combo_from_event(keyval: gdk::Key, state: gdk::ModifierType) -> Option<String
         "bracketleft" => "LeftBrace",
         "bracketright" => "RightBrace",
         "backslash" => "Backslash",
+        "XF86AudioPlay" | "XF86AudioPause" => "PlayPause",
+        "XF86AudioNext" => "NextSong",
+        "XF86AudioPrev" => "PreviousSong",
+        "XF86AudioRaiseVolume" => "VolumeUp",
+        "XF86AudioLowerVolume" => "VolumeDown",
+        "XF86AudioMute" => "Mute",
+        "KP_Decimal" | "KP_Separator" => "KPDOT",
+        "KP_Add" => "KPPLUS",
+        "KP_Subtract" => "KPMINUS",
+        "KP_Multiply" => "KPASTERISK",
+        "KP_Divide" => "KPSLASH",
+        "KP_Equal" => "KPEQUAL",
         other => {
             let mut chars = other.chars();
             let first = chars.next()?;
             if chars.next().is_some() {
-                // Nombres con más de un carácter que no están en la tabla
-                // (F11 llega así y sí vale, el resto se descarta).
+                // Nombres con más de un carácter: F11 llega así y vale;
+                // "KP_1" (teclado numérico) y "XF86Eject" (media) se
+                // aceptan si la tabla de teclas los conoce.
                 if other.starts_with('F') && other[1..].chars().all(|c| c.is_ascii_digit()) {
                     return Some(with_modifiers(other, state));
+                }
+                if let Some(kp) = other.strip_prefix("KP_") {
+                    let token = format!("KP{}", kp.to_ascii_uppercase());
+                    if named_key(&token).is_some() {
+                        return Some(with_modifiers(&token, state));
+                    }
+                }
+                if let Some(rest) = other.strip_prefix("XF86") {
+                    let token = rest.to_ascii_uppercase();
+                    if named_key(&token).is_some() {
+                        return Some(with_modifiers(&token, state));
+                    }
                 }
                 return None;
             }
