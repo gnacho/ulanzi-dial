@@ -311,6 +311,61 @@ static KEY_NAMES: &[(&str, Key)] = &[
     ("SHIFT", Key::KEY_LEFTSHIFT),
     ("LEFTALT", Key::KEY_LEFTALT),
     ("ALT", Key::KEY_LEFTALT),
+    // Teclado numérico.
+    ("KP0", Key::KEY_KP0),
+    ("KP1", Key::KEY_KP1),
+    ("KP2", Key::KEY_KP2),
+    ("KP3", Key::KEY_KP3),
+    ("KP4", Key::KEY_KP4),
+    ("KP5", Key::KEY_KP5),
+    ("KP6", Key::KEY_KP6),
+    ("KP7", Key::KEY_KP7),
+    ("KP8", Key::KEY_KP8),
+    ("KP9", Key::KEY_KP9),
+    ("KPDOT", Key::KEY_KPDOT),
+    ("KPENTER", Key::KEY_KPENTER),
+    ("KPPLUS", Key::KEY_KPPLUS),
+    ("KPMINUS", Key::KEY_KPMINUS),
+    ("KPASTERISK", Key::KEY_KPASTERISK),
+    ("KPSLASH", Key::KEY_KPSLASH),
+    ("KPEQUAL", Key::KEY_KPEQUAL),
+    ("KPCOMMA", Key::KEY_KPCOMMA),
+    // Teclas de medios y lanzadoras (llegan como nombres XF86 desde GTK).
+    ("MEDIA", Key::KEY_MEDIA),
+    ("HOMEPAGE", Key::KEY_HOMEPAGE),
+    ("MAIL", Key::KEY_MAIL),
+    ("CALC", Key::KEY_CALC),
+    ("SEARCH", Key::KEY_SEARCH),
+    ("FAVORITES", Key::KEY_FAVORITES),
+    ("REFRESH", Key::KEY_REFRESH),
+    ("WWW", Key::KEY_WWW),
+    ("COMPUTER", Key::KEY_COMPUTER),
+    ("APPSELECT", Key::KEY_APPSELECT),
+    ("VOICECOMMAND", Key::KEY_VOICECOMMAND),
+    ("ZOOMIN", Key::KEY_ZOOMIN),
+    ("ZOOMOUT", Key::KEY_ZOOMOUT),
+    ("SCROLLUP", Key::KEY_SCROLLUP),
+    ("SCROLLDOWN", Key::KEY_SCROLLDOWN),
+    ("CLOSE", Key::KEY_CLOSE),
+    ("OPEN", Key::KEY_OPEN),
+    ("SEND", Key::KEY_SEND),
+    ("REPLY", Key::KEY_REPLY),
+    ("FORWARD", Key::KEY_FORWARD),
+    ("SAVE", Key::KEY_SAVE),
+    ("PROPS", Key::KEY_PROPS),
+    ("UNDO", Key::KEY_UNDO),
+    ("REDO", Key::KEY_REDO),
+    ("COPY", Key::KEY_COPY),
+    ("PASTE", Key::KEY_PASTE),
+    ("CUT", Key::KEY_CUT),
+    ("FIND", Key::KEY_FIND),
+    ("STOPCD", Key::KEY_STOPCD),
+    ("PLAYCD", Key::KEY_PLAYCD),
+    ("PAUSECD", Key::KEY_PAUSECD),
+    ("EJECTCD", Key::KEY_EJECTCD),
+    ("RECORD", Key::KEY_RECORD),
+    ("REWIND", Key::KEY_REWIND),
+    ("FASTFORWARD", Key::KEY_FASTFORWARD),
 ];
 
 pub fn named_key(name: &str) -> Option<Key> {
@@ -531,5 +586,24 @@ mod tests {
         let total = names.len();
         names.dedup();
         assert_eq!(names.len(), total, "nombres duplicados en KEY_NAMES");
+    }
+
+    #[test]
+    fn media_and_keypad_keys_are_known() {
+        for name in [
+            "KP1",
+            "KPENTER",
+            "KPDOT",
+            "STOPCD",
+            "MEDIA",
+            "HOMEPAGE",
+            "ZOOMIN",
+            "UNDO",
+            "EJECTCD",
+            "FASTFORWARD",
+        ] {
+            assert!(named_key(name).is_some(), "falta {name} en la tabla");
+        }
+        assert_eq!(named_key("KEY_KP1"), named_key("KP1"));
     }
 }
