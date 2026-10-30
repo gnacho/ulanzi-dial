@@ -1,26 +1,29 @@
+[English](README.md) | [Español](README.es.md)
+
 # Ulanzi Dial
 
-Configurador GTK4 + libadwaita (Rust) para el **Ulanzi Dial D100H** en Linux.
+GTK4 + libadwaita (Rust) configurator for the **Ulanzi Dial D100H** on Linux.
 
-![mapa del dispositivo](assets/device.png)
+![device map](assets/device.png)
 
-## Qué hace
+## What it does
 
-- Lee el dial por **evdev** (el canal HID del kernel; el servicio GATT `0x1971`
-  no es un canal de eventos en tiempo real — ver AetherSDR #3232).
-- **Captura exclusiva** (`EVIOCGRAB`): las teclas multimedia que emite el
-  firmware no se filtran a otras aplicaciones.
-- Rueda (giro y pulsación) y 7 botones (3 superiores + 2 por lado)
-  asignables, cada control con su propia acción.
-- Acciones vía **uinput** (teclado/ratón virtual): volumen, brillo, scroll,
-  zoom, pistas, deshacer/rehacer, copiar/pegar, captura, bloqueo, atajos y
-  comandos personalizados.
-- HUD en pantalla al girar (ventana flotante; ver limitación Wayland abajo).
-- Config en `~/.config/ulanzi-dial/config.toml` (TOML legible, sin GSettings).
+- Reads the dial through **evdev** (the kernel HID channel; the `0x1971` GATT
+  service is not a real-time event channel, see AetherSDR #3232).
+- **Exclusive grab** (`EVIOCGRAB`): the multimedia keys the firmware emits do
+  not leak to other applications.
+- Wheel (turn and press) and 7 buttons (3 on top + 2 per side) are assignable,
+  each control with its own action.
+- Actions go through **uinput** (virtual keyboard/mouse): volume, brightness,
+  scroll, zoom, tracks, undo/redo, copy/paste, screenshot, lock, shortcuts and
+  custom commands.
+- On-screen HUD when turning (floating window; see the Wayland limitation
+  below).
+- Config at `~/.config/ulanzi-dial/config.toml` (readable TOML, no GSettings).
 
-## Compilar y ejecutar
+## Build and run
 
-Dependencias de sistema:
+System dependencies:
 
 ```bash
 # Fedora
@@ -34,18 +37,18 @@ sudo apt install libgtk-4-dev libadwaita-1-dev cargo
 cargo run --release
 ```
 
-## Instalar en el sistema (opcional)
+## System install (optional)
 
 ```bash
 install -Dm755 target/release/ulanzi-dial ~/.local/bin/ulanzi-dial
 ```
 
-Entrada de menú en `~/.local/share/applications/dev.ulanzi.dial.desktop`:
+Menu entry at `~/.local/share/applications/dev.ulanzi.dial.desktop`:
 
 ```ini
 [Desktop Entry]
 Name=Ulanzi Dial
-Comment=Configurador del Ulanzi Dial D100H (rueda y botones)
+Comment=Ulanzi Dial D100H configurator (wheel and buttons)
 Exec=ulanzi-dial
 Icon=dev.ulanzi.dial
 Type=Application
@@ -53,140 +56,167 @@ Categories=GNOME;GTK;Utility;
 StartupNotify=true
 ```
 
-El icono va en `~/.local/share/icons/hicolor/256x256/apps/dev.ulanzi.dial.png`
-(puedes recortarlo de `assets/device.png`).
+The icon goes to
+`~/.local/share/icons/hicolor/256x256/apps/dev.ulanzi.dial.png` (you can crop
+it from `assets/device.png`).
 
-## Permisos (necesario para evdev + uinput)
+## Permissions (required for evdev + uinput)
 
-Sin permisos, la app no puede abrir `/dev/input/event*` ni escribir en
+Without permissions the app cannot open `/dev/input/event*` nor write to
 `/dev/uinput`.
 
-Si tu usuario ya está en el grupo `input` y `/dev/uinput` es `root:input 660`,
-no hay que hacer nada: comprueba con `id` y `ls -l /dev/uinput`.
+If your user is already in the `input` group and `/dev/uinput` is
+`root:input 660`, there is nothing to do: check with `id` and
+`ls -l /dev/uinput`.
 
-En caso contrario, instala la regla udev incluida:
+Otherwise, install the included udev rule:
 
 ```bash
 sudo cp udev/99-ulanzi-dial.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-Cierra sesión y vuelve a entrar (o reinicia) para que surta efecto.
+Log out and back in (or reboot) for it to take effect.
 
-## Mapa de teclas del D100H
+## D100H key map
 
-El mapa por defecto está medido en un D100H real (capturando evdev en
-exclusiva, 27-Oct-2026):
+The default map was measured on a real D100H (capturing evdev exclusively,
+2026-10-27):
 
-| Control | Código que emite |
+| Control | Code it emits |
 |---|---|
-| Rueda a la derecha | `KEY_VOLUMEUP` |
-| Rueda a la izquierda | `KEY_VOLUMEDOWN` |
-| Pulsar la rueda | `KEY_MUTE` |
-| Superior izquierdo | `KEY_PREVIOUSSONG` |
-| Superior central | `KEY_PLAYPAUSE` |
-| Superior derecho | `KEY_NEXTSONG` |
-| Lateral izquierdo arriba | `Ctrl+V` |
-| Lateral izquierdo abajo | `Ctrl+C` |
-| Lateral derecho arriba | `Ctrl+Y` |
-| Lateral derecho abajo | `Ctrl+Z` |
+| Wheel right | `KEY_VOLUMEUP` |
+| Wheel left | `KEY_VOLUMEDOWN` |
+| Wheel press | `KEY_MUTE` |
+| Top left | `KEY_PREVIOUSSONG` |
+| Top center | `KEY_PLAYPAUSE` |
+| Top right | `KEY_NEXTSONG` |
+| Left side upper | `Ctrl+V` |
+| Left side lower | `Ctrl+C` |
+| Right side upper | `Ctrl+Y` |
+| Right side lower | `Ctrl+Z` |
 
-Tres particularidades de este firmware, medidas con el aparato en la mano:
+Three quirks of this firmware, measured with the device in hand:
 
-- Suelta Ctrl antes que la letra del combo (el decoder resuelve la liberación
-  por la tecla, no por el estado de Ctrl).
-- No informa de una pulsación mantenida en la rueda: manda pulsación y
-  liberación seguidas, así que no existe la pulsación larga.
-- Mientras un botón está pulsado no emite giros: la rueda y los botones no se
-  pueden combinar, así que cada uno tiene una sola acción.
+- It releases Ctrl before the letter of the combo (the decoder resolves the
+  release by the key, not by the Ctrl state).
+- It does not report a held press on the wheel: it sends press and release
+  back to back, so there is no long press.
+- While a button is held the wheel emits nothing: wheel and buttons cannot be
+  combined, so each one has a single action.
 
-Con el dial emparejado puedes comprobar el mapa en tu unidad:
+With the dial paired you can check the map on your unit:
 
 ```bash
-evtest   # elige el dispositivo "Ulanzi Dial Keyboard"
+evtest   # pick the "Ulanzi Dial Keyboard" device
 ```
 
-Si tu unidad difiere, edita `~/.config/ulanzi-dial/config.toml`:
+If your unit differs, edit `~/.config/ulanzi-dial/config.toml`:
 
 ```toml
 [keymap]
 top-left = "Ctrl+X"
 top-center = "Ctrl+C"
-# claves: top-left, top-center, top-right,
-#         side-left-upper, side-left-lower, side-right-upper, side-right-lower
+# keys: top-left, top-center, top-right,
+#       side-left-upper, side-left-lower, side-right-upper, side-right-lower
 ```
 
-## Volumen
+## Volume
 
-Por defecto la rueda manda las teclas de volumen del sistema, así que se ve el OSD nativo del escritorio y el salto es el que tenga configurado (6% en GNOME, ajustable con `gsettings set org.gnome.settings-daemon.plugins.media-keys volume-step 3`).
+By default the wheel sends the system volume keys, so the desktop's native OSD
+shows up and the step is whatever your desktop uses (6% on GNOME, adjustable
+with `gsettings set org.gnome.settings-daemon.plugins.media-keys volume-step 3`).
 
-Si prefieres un salto propio y no te importa perder el OSD del escritorio, el dial puede hablar directamente con PipeWire (`wpctl`) o PulseAudio (`pactl`) y aplicar el salto que le digas:
+If you prefer your own step and do not mind losing the desktop OSD, the dial
+can talk to PipeWire (`wpctl`) or PulseAudio (`pactl`) directly and apply the
+step you choose:
 
 ```toml
-volume_mode = "mixer"   # "keys" (por defecto) o "mixer"
-volume_step = 3         # puntos de volumen por muesca, solo en modo mixer
-sensitivity = 5         # solo afecta a scroll, scroll horizontal y zoom
+volume_mode = "mixer"   # "keys" (default) or "mixer"
+volume_step = 3         # volume points per detent, mixer mode only
+sensitivity = 5         # only affects scroll, horizontal scroll and zoom
 ```
 
-En modo `mixer` el HUD de la app muestra el volumen real que devuelve el mezclador, no un contador interno. Con `keys` el HUD no se muestra para el volumen porque el OSD del escritorio ya lo hace. La sensibilidad no multiplica el volumen ni el cambio de pista: era lo que hacía que una muesca saltara 30 puntos.
+In `mixer` mode the app's HUD shows the real volume returned by the mixer, not
+an internal counter. With `keys` the HUD does not show for volume because the
+desktop OSD already does it. Sensitivity never multiplies volume or track
+changes: that was what made a single detent jump 30 points.
 
-## Perfiles por aplicación
+## Per-application profiles
 
-Cada aplicación puede tener sus propias asignaciones para los siete botones. La rueda (girar y pulsar) es siempre global: volumen y silencio tienen el mismo sentido en todas partes.
+Each application can have its own bindings for the seven buttons. The wheel
+(turn and press) is always global: volume and mute mean the same thing
+everywhere.
 
-Crear un perfil es implícito: con la aplicación en primer plano, cambia una asignación en la pestaña Dispositivo y se guarda en el perfil de esa aplicación. Los botones que no toques siguen usando la asignación global.
+Profiles are implicit: with the application in the foreground, change a
+binding in the Device tab and it is stored in that application's profile.
+Buttons you do not touch keep using the global binding.
 
-Para que la app sepa qué ventana está activa hace falta una extensión de GNOME Shell, porque GNOME no permite a un programa normal consultarlo (la API de introspección de Mutter responde `AccessDenied` y Mutter no implementa `wlr-foreign-toplevel-management`):
+For the app to know which window is focused it needs a GNOME Shell extension,
+because GNOME does not let a regular program query it (Mutter's introspection
+API answers `AccessDenied` and Mutter does not implement
+`wlr-foreign-toplevel-management`):
 
 ```bash
 mkdir -p ~/.local/share/gnome-shell/extensions/ulanzi-dial-focus@gnacho
 cp gnome-extension/metadata.json gnome-extension/extension.js \
    ~/.local/share/gnome-shell/extensions/ulanzi-dial-focus@gnacho/
-# actívala en la app Extensiones, o:
+# enable it in the Extensions app, or:
 gnome-extensions enable ulanzi-dial-focus@gnacho
 ```
 
-La extensión publica el identificador de la aplicación enfocada en el bus `dev.ulanzi.Dial.Focus`. Tras instalarla hay que cerrar y abrir sesión: en Wayland no se puede recargar GNOME Shell en caliente. Si la extensión no está o está desactivada, la app funciona igual y se queda en el perfil global, sin errores.
+The extension publishes the focused application id on the
+`dev.ulanzi.Dial.Focus` bus. After installing it you must log out and back in:
+on Wayland GNOME Shell cannot be reloaded live. If the extension is missing or
+disabled, the app works the same and stays on the global profile, with no
+errors.
 
-En la pestaña General puedes fijar un perfil a mano (`Global` o el de una aplicación concreta). El perfil fijado manda sobre la ventana activa.
+In the General tab you can pin a profile by hand (`Global` or one specific
+application). The pinned profile wins over the focused window.
 
-## Estructura
+## Layout
 
 ```
 src/
-  main.rs            entrada (adw::Application)
-  config.rs          config.toml: carga/guardado, keymap overrides
+  main.rs            entry point (adw::Application)
+  config.rs          config.toml: load/save, keymap overrides
   backend/
-    keymap.rs        códigos físicos → identidad lógica (testeado)
-    decoder.rs       eventos crudos → gestos semánticos (testeado)
-    device.rs        evdev: detección, grab exclusivo, hotplug, batería
-    focus.rs         sondeo D-Bus de la ventana activa (extensión de GNOME)
-    actions.rs       ejecutor uinput + opciones de la UI (testeado)
+    keymap.rs        physical codes to logical identity (tested)
+    decoder.rs       raw events to semantic gestures (tested)
+    device.rs        evdev: detection, exclusive grab, hotplug, battery
+    focus.rs         D-Bus listener for the focused window (GNOME extension)
+    actions.rs       uinput executor + UI options (tested)
   ui/
-    mod.rs           ventana, ViewSwitcher, banner, toasts, cableado
-    device_page.rs   pestaña Dispositivo (estado + mapa)
-    control_map.rs   mapa OpenLogi (foto + líneas + tarjetas)
-    general_page.rs  pestaña General (ruleta, comportamiento, perfil)
-    chord_dialog.rs  diálogo de captura de atajos de teclado
-    hud.rs           indicador en pantalla
-assets/              foto frontal del D100H
-gnome-extension/     extensión que publica la ventana activa
-udev/                regla udev para permisos de input
+    mod.rs           window, ViewSwitcher, banner, toasts, wiring
+    device_page.rs   Device tab (status + map)
+    control_map.rs   control map (photo + leader lines + cards)
+    general_page.rs  General tab (wheel, behaviour, profile)
+    chord_dialog.rs  keyboard shortcut recorder dialog
+    hud.rs           on-screen indicator
+assets/              D100H front photo
+gnome-extension/     extension publishing the focused window
+udev/                udev rule for input permissions
 ```
 
-## Limitaciones conocidas / hoja de ruta
+## Known limitations / roadmap
 
-- **Wayland**: el HUD es una ventana pequeña normal (sin `gtk4-layer-shell` no
-  hay overlay real). Migrar el HUD a layer-shell es el primer candidato de
-  mejora.
-- **Perfiles por aplicación**: necesitan la extensión de GNOME (ver arriba),
-  porque GNOME no expone la ventana activa a programas normales.
-- **Ventana de tamaño fijo** (1020×760): el mapa usa geometría fija en v1.
-- **Batería**: lectura best-effort del nodo `ABS_MISC` hermano (rango 0-255).
-  Si el firmware no la expone limpiamente, simplemente no se muestra.
-- UI en gtk4-rs imperativo; estructura pensada para migrar a **relm4**.
+- **Wayland**: the HUD is a small regular window (no `gtk4-layer-shell`, so no
+  real overlay). Moving the HUD to layer-shell is the first improvement
+  candidate.
+- **Per-application profiles**: they need the GNOME extension (see above),
+  because GNOME does not expose the focused window to regular programs.
+- **Fixed-size window** (1020x760): the map uses fixed geometry in v1.
+- **Battery**: best-effort read from the sibling `ABS_MISC` node (0-255 range).
+  If the firmware does not expose it cleanly, it simply does not show up.
+- UI in imperative gtk4-rs; structure meant to migrate to **relm4**.
 
-## Créditos
+## Security
 
-- Análisis del protocolo y mapa de teclas: AetherSDR #3232.
-- Fotos del dispositivo: material del fabricante (Ulanzi), recortado para el mapa.
+Please report vulnerabilities privately through the Security tab
+([report a vulnerability](https://github.com/gnacho/ulanzi-dial/security/advisories/new))
+instead of opening a public issue. See [SECURITY.md](SECURITY.md).
+
+## Credits
+
+- Protocol analysis and key map: AetherSDR #3232.
+- Device photos: manufacturer material (Ulanzi), cropped for the map.
