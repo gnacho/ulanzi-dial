@@ -47,6 +47,8 @@ pub struct Config {
     pub exclusive_grab: bool,
     pub autostart: bool,
 
+    /// Rueda: global por diseño, no se perfilea (el firmware no emite
+    /// eventos de rueda mientras hay un botón mantenido).
     pub dial_rotate: Action,
     pub dial_press: Action,
 
@@ -68,20 +70,13 @@ pub struct Config {
 }
 
 /// Asignaciones propias de una aplicación concreta.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+///
+/// Solo los botones se perfilean: la rueda es global por diseño (el
+/// firmware no emite eventos de rueda mientras hay un botón mantenido).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Profile {
-    pub dial_rotate: Action,
     pub buttons: HashMap<ButtonId, ControlBinding>,
-}
-
-impl Default for Profile {
-    fn default() -> Self {
-        Self {
-            dial_rotate: Action::Volume,
-            buttons: HashMap::new(),
-        }
-    }
 }
 
 impl Default for Config {

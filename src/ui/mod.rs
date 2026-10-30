@@ -316,11 +316,7 @@ fn handle_event(
             device.borrow().map.highlight(Highlight::DialPress);
         }
         DialEvent::ButtonPress(id) => {
-            let action = cfg
-                .buttons
-                .get(&id)
-                .map(|b| b.press.clone())
-                .unwrap_or(Action::None);
+            let action = cfg.press_for(id);
             drop(cfg);
             shared.with_executor(|exec| exec.press(&action));
             device.borrow().map.highlight(Highlight::Button(id));
