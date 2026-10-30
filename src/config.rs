@@ -209,7 +209,20 @@ impl Config {
         match std::fs::read_to_string(&path) {
             Ok(text) => match toml::from_str(&text) {
                 Ok(cfg) => return cfg,
-                Err(e) => tracing::warn!("config.toml inválido ({e}); usando valores por defecto"),
+                Err(e) => {
+                    // Conserva el fichero roto antes de que el siguiente
+                    // save lo pise: sin esto, un TOML corrupto acababa
+                    // sustituido por valores por defecto sin aviso.
+                    let bak = path.with_extension("toml.bak");
+                    match std::fs::copy(&path, &bak) {
+                        Ok(_) => tracing::warn!(
+                            "config.toml inválido ({e}); copia en config.toml.bak; usando valores por defecto"
+                        ),
+                        Err(_) => {
+                            tracing::warn!("config.toml inválido ({e}); usando valores por defecto")
+                        }
+                    }
+                }
             },
             Err(_) => tracing::info!("sin config.toml; usando valores por defecto"),
         }
@@ -221,13 +234,37 @@ impl Config {
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        match toml::to_string_pretty(self) {
-            Ok(text) => {
-                if let Err(e) = std::fs::write(&path, text) {
-                    tracing::warn!("no se pudo guardar config.toml: {e}");
+        let text = match toml::to_string_pretty(self) {
+            Ok(text) => text,
+            Err(e) => {
+                tracing::warn!("no se pudo serializar la config: {e}");
+                return;
+            }
+        };
+        // Escritura atómica: temporal con 0600 (los comandos personalizados
+        // pueden contener tokens) y rename encima del destino. Un crash a
+        // mitad ya no puede dejar un TOML a medias.
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let tmp = path.with_extension("toml.tmp");
+        let written = std::fs::OpenOptions::new()
+            .mode(0o600)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&tmp)
+            .and_then(|mut file| file.write_all(text.as_bytes()));
+        match written {
+            Ok(()) => {
+                if let Err(e) = std::fs::rename(&tmp, &path) {
+                    tracing::warn!("no se pudo reemplazar config.toml: {e}");
+                    let _ = std::fs::remove_file(&tmp);
                 }
             }
-            Err(e) => tracing::warn!("no se pudo serializar la config: {e}"),
+            Err(e) => {
+                tracing::warn!("no se pudo guardar config.toml: {e}");
+                let _ = std::fs::remove_file(&tmp);
+            }
         }
     }
 
@@ -359,5 +396,47 @@ mod tests {
             .get("a")
             .and_then(|p| p.buttons.get(&ButtonId::TopCenter))
             .is_none());
+    }
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn temp_config_dir(tag: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("ulanzi-dial-test-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("ulanzi-dial")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn save_writes_atomically_with_private_permissions() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let dir = temp_config_dir("save");
+        std::env::set_var("XDG_CONFIG_HOME", &dir);
+        let mut cfg = Config::default();
+        cfg.autostart = true;
+        cfg.save();
+
+        let path = dir.join("ulanzi-dial/config.toml");
+        assert!(path.exists());
+        assert!(!dir.join("ulanzi-dial/config.toml.tmp").exists());
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        assert!(Config::load().autostart);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_keeps_a_backup_of_a_corrupt_file() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let dir = temp_config_dir("corrupt");
+        std::env::set_var("XDG_CONFIG_HOME", &dir);
+        std::fs::write(dir.join("ulanzi-dial/config.toml"), "esto no es toml [[[ ").unwrap();
+
+        let cfg = Config::load();
+        assert!(!cfg.autostart, "cae a valores por defecto");
+        assert!(dir.join("ulanzi-dial/config.toml.bak").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

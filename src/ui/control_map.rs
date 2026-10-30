@@ -7,7 +7,7 @@
 //! tarjeta al pintar (`compute_bounds`), así que la guía sigue apuntando al
 //! control correcto aunque el tema o la fuente cambien el alto de la tarjeta.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -90,6 +90,8 @@ pub struct ControlMap {
     config: Rc<RefCell<Config>>,
     dropdowns: Rc<RefCell<HashMap<ButtonId, gtk::DropDown>>>,
     chord_ui: Rc<RefCell<HashMap<ButtonId, (gtk::Button, gtk::Label)>>>,
+    /// Activa durante refresh(): los desplegables repintan sin persistir.
+    updating: Rc<Cell<bool>>,
 }
 
 fn texture(bytes: &'static [u8]) -> gtk::gdk::Texture {
@@ -263,6 +265,7 @@ impl ControlMap {
             Rc::new(RefCell::new(HashMap::new()));
 
         let on_toast = Rc::new(on_toast);
+        let updating: Rc<Cell<bool>> = Rc::new(Cell::new(false));
         let mk_binding = |cfg: &Rc<RefCell<Config>>, id: ButtonId, toast: Rc<dyn Fn(String)>| {
             let cfg = cfg.clone();
             let label = id.label();
@@ -310,7 +313,14 @@ impl ControlMap {
                 let on_change = on_change.clone();
                 let chord_label = chord_label.clone();
                 let chord_button = chord_button.clone();
+                let updating = updating.clone();
                 move |action: Action| {
+                    if updating.get() {
+                        // Refresh() programático: repintar sin persistir,
+                        // si no, cada cambio de perfil materializaba el
+                        // fallback global como binding explícito del perfil.
+                        return;
+                    }
                     match action.shortcut() {
                         Some(combo) => {
                             chord_label.set_label(&chord_display(&combo));
@@ -407,9 +417,14 @@ impl ControlMap {
             let name: &'static str = name;
             let current = getter(&config.borrow());
             let cfg = config.clone();
+            let updating = updating.clone();
             let hl2 = *hl;
             let toast = on_toast.clone();
             let dd = dropdown(options, &current, move |action| {
+                if updating.get() {
+                    // Refresh() programático: repintar sin persistir.
+                    return;
+                }
                 {
                     let mut c = cfg.borrow_mut();
                     match hl2 {
@@ -558,6 +573,7 @@ impl ControlMap {
             config,
             dropdowns,
             chord_ui,
+            updating,
         }
     }
 
@@ -565,6 +581,9 @@ impl ControlMap {
     /// Relee las asignaciones de la configuración y repinta las tarjetas.
     /// Se llama cuando cambia el perfil (aplicación activa o perfil fijado).
     pub fn refresh(&self) {
+        // Los set_selected de aquí disparan connect_selected_notify: con la
+        // bandera activa repintan sin escribir config ni toasts.
+        self.updating.set(true);
         let cfg = self.config.borrow();
         for (id, dd) in self.dropdowns.borrow().iter() {
             let action = cfg.press_for(*id);
@@ -587,6 +606,7 @@ impl ControlMap {
                 }
             }
         }
+        self.updating.set(false);
     }
 
     pub fn highlight(&self, target: Highlight) {
