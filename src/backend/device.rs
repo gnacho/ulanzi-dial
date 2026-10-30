@@ -12,7 +12,7 @@ use std::thread;
 use std::time::Duration;
 
 use async_channel::Sender;
-use evdev::{Device, EventType, InputEvent, Key};
+use evdev::{AbsoluteAxisType, Device, EventType, InputEvent, Key};
 
 use super::decoder::{Decoder, DialEvent, RawKeyEvent};
 use super::keymap::KeyMap;
@@ -30,6 +30,8 @@ pub enum BackendMsg {
 const DEVICE_NAME_PREFIX: &str = "Ulanzi";
 const RESCAN_INTERVAL: Duration = Duration::from_secs(1);
 const POLL_INTERVAL: Duration = Duration::from_millis(25);
+/// La batería no cambia a la vista: con un refresco por minuto sobra.
+const BATTERY_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Busca el nodo evdev que lleva los eventos de teclado del dial.
 pub fn find_device() -> Option<(PathBuf, Device)> {
@@ -53,19 +55,28 @@ pub fn read_battery() -> Option<u8> {
         if !name.starts_with(DEVICE_NAME_PREFIX) || name.contains("Keyboard") {
             continue;
         }
-        let axes = device.supported_absolute_axes()?;
-        for axis in axes.iter() {
-            if let Ok(state) = device.get_abs_state() {
-                // state es un vector indexado por código de eje
-                let idx = axis.0 as usize;
-                if let Some(info) = state.get(idx) {
-                    let value = info.value.clamp(0, 255) as u32;
-                    return Some((value * 100 / 255) as u8);
-                }
-            }
+        // Solo el eje ABS_MISC es la batería; tomar el primer eje del nodo
+        // leía valores ajenos si el firmware añade ejes nuevos.
+        let Some(axes) = device.supported_absolute_axes() else {
+            continue;
+        };
+        if !axes.contains(AbsoluteAxisType::ABS_MISC) {
+            continue;
         }
+        let Ok(state) = device.get_abs_state() else {
+            continue;
+        };
+        // get_abs_state devuelve un array indexado por código de eje.
+        let raw = state[AbsoluteAxisType::ABS_MISC.0 as usize].value;
+        return Some(battery_percent(raw));
     }
     None
+}
+
+/// ABS_MISC va de 0 a 255; fuera de rango se satura, nunca se envuelve.
+fn battery_percent(raw: i32) -> u8 {
+    let clamped = raw.clamp(0, 255);
+    ((clamped as u32) * 100 / 255) as u8
 }
 
 pub struct ReaderConfig {
@@ -113,6 +124,7 @@ fn reader_loop(cfg: ReaderConfig, tx: Sender<BackendMsg>) {
         if let Some(pct) = read_battery() {
             let _ = tx.send_blocking(BackendMsg::Battery(pct));
         }
+        let mut last_battery = std::time::Instant::now();
 
         let mut decoder = Decoder::new(cfg.keymap.clone());
 
@@ -135,6 +147,14 @@ fn reader_loop(cfg: ReaderConfig, tx: Sender<BackendMsg>) {
             if !Path::new(&path).exists() {
                 break 'read;
             }
+            // La batería se refresca en sesión: al conectar solo se lee una
+            // vez y el nivel quedaba congelado hasta reconectar.
+            if last_battery.elapsed() >= BATTERY_INTERVAL {
+                last_battery = std::time::Instant::now();
+                if let Some(pct) = read_battery() {
+                    let _ = tx.send_blocking(BackendMsg::Battery(pct));
+                }
+            }
             thread::sleep(POLL_INTERVAL);
         }
 
@@ -154,5 +174,19 @@ fn handle_raw(ev: InputEvent, decoder: &mut Decoder, tx: &Sender<BackendMsg>) {
     };
     for gesture in decoder.feed(raw) {
         let _ = tx.send_blocking(BackendMsg::Event(gesture));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn battery_percent_scales_and_saturates() {
+        assert_eq!(battery_percent(0), 0);
+        assert_eq!(battery_percent(255), 100);
+        assert_eq!(battery_percent(128), 50);
+        assert_eq!(battery_percent(-5), 0);
+        assert_eq!(battery_percent(300), 100);
     }
 }
