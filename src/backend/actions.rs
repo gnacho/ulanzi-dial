@@ -418,18 +418,23 @@ pub fn rotate_options() -> &'static [(Action, &'static str)] {
     ]
 }
 
+static PRESS_OPTIONS: [(Action, &str); 10] = [
+    (Action::Undo, "Deshacer"),
+    (Action::Redo, "Rehacer"),
+    (Action::Copy, "Copiar"),
+    (Action::Paste, "Pegar"),
+    (Action::PlayPause, "Play / Pausa"),
+    (Action::Mute, "Silenciar"),
+    (Action::Screenshot, "Captura"),
+    (Action::Lock, "Bloquear"),
+    // Fila centinela: cualquier Action::Command comparte esta entrada en la
+    // UI; el comando concreto se pide con un diálogo y nunca se guarda vacío.
+    (Action::Command(String::new()), "Ejecutar comando…"),
+    (Action::None, "Nada"),
+];
+
 pub fn press_options() -> &'static [(Action, &'static str)] {
-    &[
-        (Action::Undo, "Deshacer"),
-        (Action::Redo, "Rehacer"),
-        (Action::Copy, "Copiar"),
-        (Action::Paste, "Pegar"),
-        (Action::PlayPause, "Play / Pausa"),
-        (Action::Mute, "Silenciar"),
-        (Action::Screenshot, "Captura"),
-        (Action::Lock, "Bloquear"),
-        (Action::None, "Nada"),
-    ]
+    &PRESS_OPTIONS
 }
 
 /// Índice de una acción dentro de una lista de opciones (fallback: "Nada").
@@ -437,6 +442,13 @@ pub fn index_of(options: &[(Action, &'static str)], action: &Action) -> u32 {
     options
         .iter()
         .position(|(a, _)| a == action)
+        .or_else(|| match action {
+            // Un comando guardado comparte la fila centinela del desplegable.
+            Action::Command(_) => options
+                .iter()
+                .position(|(a, _)| matches!(a, Action::Command(c) if c.is_empty())),
+            _ => None,
+        })
         .unwrap_or(options.len() - 1) as u32
 }
 
@@ -465,6 +477,18 @@ mod tests {
         assert_eq!(
             Action::Command("flameshot gui".into()).label(),
             "Ejecutar: flameshot gui"
+        );
+    }
+
+    #[test]
+    fn command_row_is_shared_by_saved_commands() {
+        let options = press_options();
+        let index = index_of(options, &Action::Command("notify-send hola".into()));
+        assert_eq!(options[index as usize].1, "Ejecutar comando…");
+        assert_eq!(
+            index_of(options, &Action::None),
+            (options.len() - 1) as u32,
+            "las acciones desconocidas caen en Nada"
         );
     }
 }
