@@ -116,6 +116,15 @@ fn load_css() {
 }
 
 pub fn build_ui(app: &adw::Application) {
+    // Con la app ya abierta, un clic en el icono reenvía activate: trae la
+    // ventana existente al frente en vez de construir otra (sin esta guarda,
+    // cada activate montaba un lector, una ventana y una suscripción D-Bus
+    // nuevos: el nuevo lector moría con EVIOCGRAB ocupado por el primero).
+    if let Some(existing) = app.windows().first() {
+        existing.present();
+        return;
+    }
+
     load_css();
 
     let config = Config::load();
