@@ -152,6 +152,26 @@ La extensión publica el identificador de la aplicación enfocada en el bus `dev
 
 En la pestaña General puedes fijar un perfil a mano (`Global` o el de una aplicación concreta). El perfil fijado manda sobre la ventana activa.
 
+## Comandos personalizados
+
+Cualquier botón puede ejecutar un comando de shell. En la app, elige
+"Ejecutar comando…" en el menú de acción del control y escríbelo: se ejecuta
+con tu shell cada vez que pulses el control.
+
+En `config.toml` esa asignación se guarda como tabla:
+
+```toml
+[buttons.side-right-upper]
+press = { command = "gnome-calculator" }
+```
+
+Los atajos de teclado grabados se guardan igual:
+
+```toml
+[buttons.top-left]
+press = { chord = "Ctrl+Shift+T" }
+```
+
 ## Estructura
 
 ```

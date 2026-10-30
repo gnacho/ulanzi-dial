@@ -174,6 +174,26 @@ errors.
 In the General tab you can pin a profile by hand (`Global` or one specific
 application). The pinned profile wins over the focused window.
 
+## Custom commands
+
+Any button can run a shell command. In the app, pick "Ejecutar comando…"
+(Run command) in a control's action menu and type it: the command runs through
+your shell every time you press the control.
+
+In `config.toml` the same binding is stored as a table:
+
+```toml
+[buttons.side-right-upper]
+press = { command = "gnome-calculator" }
+```
+
+Recorded keyboard shortcuts are stored the same way:
+
+```toml
+[buttons.top-left]
+press = { chord = "Ctrl+Shift+T" }
+```
+
 ## Layout
 
 ```
