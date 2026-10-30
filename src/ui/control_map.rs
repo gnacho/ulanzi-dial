@@ -84,7 +84,6 @@ struct Link {
 pub struct ControlMap {
     pub widget: gtk::Fixed,
     cards: Rc<RefCell<HashMap<Highlight, gtk::Box>>>,
-    selected: Rc<RefCell<Option<Highlight>>>,
     transient: Rc<RefCell<Option<Highlight>>>,
     overlay: gtk::DrawingArea,
     config: Rc<RefCell<Config>>,
@@ -394,12 +393,13 @@ impl ControlMap {
         }
 
         // Gestos de la rueda (un desplegable cada uno).
-        let dial_specs: &[(
+        type DialSpec = (
             Highlight,
             &'static str,
             fn(&Config) -> Action,
             &'static [(Action, &'static str)],
-        )] = &[
+        );
+        let dial_specs: &[DialSpec] = &[
             (
                 Highlight::DialRotate,
                 "Rueda · girar",
@@ -456,7 +456,7 @@ impl ControlMap {
                 let cards = cards.clone();
                 let overlay = overlay.clone();
                 gesture.connect_pressed(move |_, _, _, _| {
-                    for (_, card) in cards.borrow().iter() {
+                    for card in cards.borrow().values() {
                         card.remove_css_class("ctl-selected");
                     }
                     *selected.borrow_mut() = Some(hl);
@@ -567,7 +567,6 @@ impl ControlMap {
         Self {
             widget: fixed,
             cards,
-            selected,
             transient,
             overlay,
             config,
