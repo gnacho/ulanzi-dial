@@ -23,6 +23,8 @@ use control_map::Highlight;
 struct Shared {
     config: Rc<RefCell<Config>>,
     executor: RefCell<Option<ActionExecutor>>,
+    /// Avisa del fallo de uinput una sola vez, no en cada evento.
+    executor_toasted: Cell<bool>,
     /// Valor sintético 0-100 para el HUD (volumen/brillo/zoom).
     hud_value: Cell<i32>,
     overlay: adw::ToastOverlay,
@@ -38,12 +40,19 @@ impl Shared {
         let mut slot = self.executor.borrow_mut();
         if slot.is_none() {
             match ActionExecutor::new() {
-                Ok(exec) => *slot = Some(exec),
+                Ok(exec) => {
+                    *slot = Some(exec);
+                    self.executor_toasted.set(false);
+                }
                 Err(e) => {
                     tracing::warn!("uinput no disponible: {e}");
-                    self.toast(
-                        "No se pudo crear el dispositivo virtual (revisa permisos de /dev/uinput)",
-                    );
+                    // Sin esta bandera, cada tecla del dial sacaba un toast
+                    // nuevo mientras /dev/uinput siguiera inaccesible.
+                    if !self.executor_toasted.replace(true) {
+                        self.toast(
+                            "No se pudo crear el dispositivo virtual (revisa permisos de /dev/uinput)",
+                        );
+                    }
                     return None;
                 }
             }
@@ -154,7 +163,6 @@ pub fn build_ui(app: &adw::Application) {
     banner.set_title(
         "Dial desconectado. Enciende el D100H y mantén pulsado el botón de emparejamiento.",
     );
-    banner.set_button_label(Some("Buscar"));
     toolbar.add_top_bar(&banner);
 
     let overlay = adw::ToastOverlay::new();
@@ -164,6 +172,7 @@ pub fn build_ui(app: &adw::Application) {
     let shared = Rc::new(Shared {
         config: Rc::new(RefCell::new(config)),
         executor: RefCell::new(None),
+        executor_toasted: Cell::new(false),
         hud_value: Cell::new(45),
         overlay: overlay.clone(),
         banner: banner.clone(),
@@ -212,13 +221,8 @@ pub fn build_ui(app: &adw::Application) {
     scrolled.set_vexpand(true);
     overlay.set_child(Some(&scrolled));
 
-    // banner "Buscar": fuerza reescaneo inmediato (el hilo ya reescanea cada 1 s)
-    {
-        let shared = shared.clone();
-        banner.connect_button_clicked(move |_| {
-            shared.toast("Buscando el dial…");
-        });
-    }
+    // Sin botón de "Buscar": el hilo lector reescanea /dev/input cada
+    // segundo y el banner se oculta solo al reconectar el dial.
 
     let hud = hud::Hud::new();
 
