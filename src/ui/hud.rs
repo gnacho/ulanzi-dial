@@ -29,12 +29,10 @@ impl Hud {
         window.set_decorated(false);
         window.set_resizable(false);
         window.set_modal(false);
-        // El HUD nunca acepta el foco: en Wayland present() de una ventana
-        // normal puede robarlo y, con la extensión de perfiles cargada,
-        // cada cambio de foco conmuta de perfil en pleno gesto. gtk4-rs no
-        // expone setters para estas dos propiedades.
-        window.set_property("accept-focus", false);
-        window.set_property("focus-on-map", false);
+        // Nota: GTK4 eliminó accept-focus/focus-on-map (existían en GTK3 y
+        // set_property con sus nombres pánica en runtime). En Wayland el
+        // foco lo reparte el compositor; impedir que el HUD lo robe exige
+        // gtk4-layer-shell, que ya está en el roadmap.
         window.add_css_class("hud-window");
 
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 4);
