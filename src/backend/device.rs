@@ -29,7 +29,9 @@ pub enum BackendMsg {
 
 const DEVICE_NAME_PREFIX: &str = "Ulanzi";
 const RESCAN_INTERVAL: Duration = Duration::from_secs(1);
-const POLL_INTERVAL: Duration = Duration::from_millis(25);
+/// Techo del bloqueo de ppoll: los eventos despiertan el hilo al instante;
+/// el timeout solo gobierna cada cuánto se mira desconexión y batería.
+const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 /// La batería no cambia a la vista: con un refresco por minuto sobra.
 const BATTERY_INTERVAL: Duration = Duration::from_secs(60);
 
@@ -128,18 +130,44 @@ fn reader_loop(cfg: ReaderConfig, tx: Sender<BackendMsg>) {
 
         let mut decoder = Decoder::new(cfg.keymap.clone());
 
+        // Espera con ppoll en vez de sondeo: el hilo duerme en el kernel
+        // hasta que llegan eventos o vence el timeout (batería y
+        // desconexión). El sondeo de 25 ms eran ~40 despertares por segundo
+        // con el dial conectado aunque no pasara nada.
+        use std::os::unix::io::AsRawFd;
+        let mut fds = [libc::pollfd {
+            fd: device.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        }];
+
         // Bucle de lectura hasta que el dispositivo desaparece o da error.
         'read: loop {
-            match device.fetch_events() {
-                Ok(events) => {
-                    for ev in events {
-                        handle_raw(ev, &mut decoder, &tx);
+            // SAFETY: fds apunta a un array válido de un elemento y el
+            // timespec está completo; ppoll solo lo lee.
+            let ready = unsafe {
+                libc::ppoll(
+                    fds.as_mut_ptr(),
+                    1,
+                    &libc::timespec {
+                        tv_sec: 0,
+                        tv_nsec: POLL_TIMEOUT.as_nanos() as libc::c_long,
+                    },
+                    std::ptr::null_mut(),
+                )
+            };
+            if ready > 0 {
+                match device.fetch_events() {
+                    Ok(events) => {
+                        for ev in events {
+                            handle_raw(ev, &mut decoder, &tx);
+                        }
                     }
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(e) => {
-                    tracing::info!("dispositivo perdido: {e}");
-                    break 'read;
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(e) => {
+                        tracing::info!("dispositivo perdido: {e}");
+                        break 'read;
+                    }
                 }
             }
 
@@ -155,7 +183,6 @@ fn reader_loop(cfg: ReaderConfig, tx: Sender<BackendMsg>) {
                     let _ = tx.send_blocking(BackendMsg::Battery(pct));
                 }
             }
-            thread::sleep(POLL_INTERVAL);
         }
 
         let _ = device.ungrab();
