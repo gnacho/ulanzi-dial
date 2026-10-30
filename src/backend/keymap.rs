@@ -186,6 +186,11 @@ impl KeyMap {
 /// Los modificadores se aceptan en cualquier orden y sin distinguir mayúsculas.
 /// Para un "+" literal hay que escribir "Plus".
 pub fn parse_combo(s: &str) -> Option<KeyCombo> {
+    // "Ctrl+" no es un atajo: el separador final delata un combo a medias
+    // (sin el guard, "Ctrl+" acababa resolviendo la tecla Ctrl a secas).
+    if s.trim().ends_with('+') {
+        return None;
+    }
     let tokens: Vec<&str> = s
         .split('+')
         .map(str::trim)
@@ -356,6 +361,12 @@ mod tests {
             Some(KeyCombo::plain(Key::KEY_NEXTSONG))
         );
         assert_eq!(parse_combo("NotAKey"), None);
+        // Separador final: combo a medias, no la tecla Ctrl a secas.
+        assert_eq!(parse_combo("Ctrl+"), None);
+        assert_eq!(parse_combo("Ctrl++"), None);
+        assert_eq!(parse_combo("Ctrl+Shift+"), None);
+        // El "+" literal se escribe "Plus" y sigue funcionando.
+        assert!(parse_combo("Ctrl+Plus").is_some());
     }
 
     #[test]

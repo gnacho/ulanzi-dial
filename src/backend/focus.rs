@@ -42,7 +42,9 @@ pub fn spawn_watcher(on_change: impl Fn(Option<String>) + 'static) {
 
     let notify = Rc::new(on_change);
     let subscription = connection.signal_subscribe(
-        None,
+        // Solo señales de la extensión (dueña del nombre): sin filtro,
+        // cualquier proceso de la sesión podría falsificar el app-id.
+        Some(BUS_NAME),
         Some(INTERFACE),
         Some("Changed"),
         Some(OBJECT_PATH),
