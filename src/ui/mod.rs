@@ -149,18 +149,6 @@ pub fn build_ui(app: &adw::Application) {
     let toolbar = adw::ToolbarView::new();
     let header = adw::HeaderBar::new();
 
-    let theme_btn = gtk::Button::from_icon_name("display-brightness-symbolic");
-    theme_btn.set_tooltip_text(Some("Alternar tema claro/oscuro"));
-    theme_btn.connect_clicked(|_| {
-        let mgr = adw::StyleManager::default();
-        let next = match mgr.color_scheme() {
-            adw::ColorScheme::ForceDark => adw::ColorScheme::ForceLight,
-            _ => adw::ColorScheme::ForceDark,
-        };
-        mgr.set_color_scheme(next);
-    });
-    header.pack_start(&theme_btn);
-
     // Menú de la derecha: Acerca de.
     let about_action = gtk::gio::SimpleAction::new("about", None);
     {
